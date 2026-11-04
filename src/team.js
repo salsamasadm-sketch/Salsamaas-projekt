@@ -35,9 +35,10 @@ const ownShift = z.object({ kind: KIND, location: LOC, start: iso, end: iso }).s
   .refine((s) => new Date(s.end) > new Date(s.start) && new Date(s.end) - new Date(s.start) <= 16 * 3_600_000, 'Ende muss nach Start liegen (max. 16 Std.)');
 const CATEGORIES = ['eintritt', 'workshop', 'kursgebuehr', 'softdrinks', 'bier', 'wein', 'cocktails', 'longdrinks', 'shots', 'heiss', 'snacks', 'sonstiges'];
 const pname = z.string().trim().min(1).max(40).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen');
-const { CATALOG } = require('./catalog');
-const productCreate = z.object({ name: pname, priceCents: cents(100_000), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES), active: z.boolean().default(true), sort: z.number().int().min(0).max(999).default(100) }).strict();
-const productPatch = z.object({ name: pname.optional(), priceCents: cents(100_000).optional(), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
+const { CATALOG, WRISTBAND_CENTS } = require('./catalog');
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Farbe als #RRGGBB');
+const productCreate = z.object({ name: pname, color: hexColor.nullable().optional(), priceCents: cents(100_000), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES), active: z.boolean().default(true), sort: z.number().int().min(0).max(999).default(100) }).strict();
+const productPatch = z.object({ name: pname.optional(), color: hexColor.nullable().optional(), priceCents: cents(100_000).optional(), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
 const stock = z.record(S.id, z.number().int().min(0).max(10_000)).refine((o) => Object.keys(o).length <= 300, 'zu viele Artikel');
 const sessionOpen = z.object({ location: LOC, station: z.enum(STATIONS).default('theke'), cashStartCents: cents(10_000_000), stockStart: stock.default({}) }).strict();
@@ -419,6 +420,8 @@ function createTeamRouter({ store, keys, sessions, logger }) {
 
   r.post('/products', owner, wrap(async (req, res) => {
     const d = parse(productCreate, req.body, res); if (!d) return;
+    // Eintritt/Workshop: standardmaessig 1 Eventband pro Person als Materialkosten
+    if (d.costCents == null && ['eintritt', 'workshop'].includes(d.category)) d.costCents = WRISTBAND_CENTS;
     const p = { id: crypto.randomUUID(), ...d, createdAt: new Date().toISOString() };
     await store.putDoc('products', p); log(req, 'product_created');
     res.status(201).json(p);
@@ -429,7 +432,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     let n = 0;
     for (const [i, c] of CATALOG.entries()) {
       if (existing.has(c.name.toLowerCase())) continue;
-      await store.putDoc('products', { id: crypto.randomUUID(), name: c.name, priceCents: c.priceCents, costCents: c.costCents, ...(c.source && { source: c.source }), category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date().toISOString() }); n++;
+      await store.putDoc('products', { id: crypto.randomUUID(), name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, ...(c.source && { source: c.source }), category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date().toISOString() }); n++;
     }
     log(req, 'catalog_imported'); res.json({ created: n });
   }));

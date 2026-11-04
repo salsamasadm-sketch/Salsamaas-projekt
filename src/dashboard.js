@@ -98,6 +98,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
   const missingUnits = sum(closed, (b) => b.missingUnits);
   // Wareneinsatz (Einkaufspreis netto) fuer verkaufte/gratis Getraenke plus Schwund
   const cogs = sum(bars, (b) => (b.cogsCents || 0) + (b.missingCogsCents || 0));
+  const ticketMaterial = sum(bars, (b) => b.ticketCostCents || 0); // z. B. Eventbaender pro Gast
   const noCost = [...new Set(bars.flatMap((b) => b.noCostItems || []))];
   const purchasesInRange = purchases.filter((p) => inMonth(p.date));
   const purchaseSum = sum(purchasesInRange, (p) => p.totalCents - (p.depositCents || 0));
@@ -139,7 +140,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
   const fixedMonthly = sum(Object.values(cfg.fixedCostsCents), (v) => v || 0);
   const fixed = proratedFixed(fixedMonthly, range);
   const income = barRevenue + ticketRevenue + courseRevenue;
-  const costs = personnelCost + fixed + cogs;
+  const costs = personnelCost + fixed + cogs + ticketMaterial;
   const profit = income - costs;
 
   const kpis = [
@@ -291,7 +292,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
     shopping,
     personnel: { totalCents: personnelCost, barCents: barPersonnelCost, byStaff, helpers: monthShifts.filter((s) => s.helper).map((s) => ({ id: s.id, name: s.staffRef, date: berlinDate(s.start), hours: shiftHours(s, now), payCents: shiftCost(s, now), payout: s.payout, paid: !!s.paid, location: s.location })) },
     courses: { utilizationPct, participants, capacity: cap, openCount: openEnr.length, openOwedCents: openOwed, rows: courseRows },
-    totals: { incomeCents: income, costsCents: costs, fixedCents: fixed, cogsCents: cogs, purchasesCents: purchaseSum, profitCents: profit },
+    totals: { incomeCents: income, costsCents: costs, fixedCents: fixed, cogsCents: cogs, ticketMaterialCents: ticketMaterial, purchasesCents: purchaseSum, profitCents: profit },
   };
 }
 

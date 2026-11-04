@@ -90,7 +90,7 @@ function computeSettlement(session, sales, products = []) {
   return {
     sessionId: session.id, date: session.date, location: session.location, station: stationOf(session), status: session.closedAt ? 'closed' : 'open',
     salesCount: count, revenueCents: cash + card, cashSalesCents: cash, cardSalesCents: card,
-    drinksRevenueCents: cash + card - ticketRev - courseRev, ticketRevenueCents: ticketRev, ticketCount,
+    drinksRevenueCents: cash + card - ticketRev - courseRev, ticketRevenueCents: ticketRev, ticketCount, ticketCostCents: [...tickets.values()].reduce((a, t) => a + t.qty * (costOf.get(t.productId) ?? 0), 0),
     courseFeeCents: courseRev, courseFees: [...fees.values()].sort((a, b) => b.revenueCents - a.revenueCents),
     tickets: [...tickets.values()].sort((a, b) => b.qty - a.qty),
     cashStartCents: session.cashStartCents || 0, cashOutCents: session.cashOutCents || 0, helpers, helperCashCents: helperCash,

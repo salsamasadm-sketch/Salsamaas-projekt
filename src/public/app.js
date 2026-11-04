@@ -6,6 +6,12 @@
   const KIND = { bar: 'Bar / Theke', empfang: 'Empfang / Tür', kombi: 'Tür + Theke (alles)', kurs: 'Unterricht', sonstiges: 'Sonstiges' };
   const TICKET = ['eintritt', 'workshop', 'kursgebuehr']; // ohne Inventar
   const FEE = 'kursgebuehr';
+  // Getraenkefarben: eigene Farbe des Artikels, sonst nach Namen (bekannte Marken), sonst nach Kategorie
+  const NAME_COLORS = [[/cola-?mix|spezi/i, '#b4561c'], [/zero/i, '#1a1a1a'], [/cola/i, '#e41e2b'], [/fanta/i, '#f7941d'], [/sprite/i, '#00a651'], [/red ?bull|energy/i, '#1f3f8f'], [/apfel/i, '#e0a526'], [/johannis|cassis/i, '#7b1e4b'], [/wasser|water/i, '#5aaee0'], [/aperol/i, '#f26b21'], [/hugo/i, '#8cc63f'], [/cuba|rum/i, '#4a2c1a'], [/rotwein|rot/i, '#7b1e2b'], [/weißwein|weisswein/i, '#d6df8a'], [/sekt|prosecco|crémant/i, '#e3cf8f'], [/helles|bier|radler|weizen/i, '#f2c230'], [/mojito/i, '#5cb85c'], [/caipi/i, '#9ccc65']];
+  const CAT_COLORS = { eintritt: '#14161b', workshop: '#c2185b', kursgebuehr: '#2b6cb0', softdrinks: '#5aaee0', bier: '#f2c230', wein: '#d6df8a', cocktails: '#f26b21', longdrinks: '#4a2c1a', shots: '#8d6e63', heiss: '#795548', snacks: '#a1887f', sonstiges: '#8a93a3' };
+  const drinkColor = (p) => p.color || (NAME_COLORS.find(([re]) => re.test(p.name)) || [])[1] || CAT_COLORS[p.category] || '#8a93a3';
+  // Lesbare Schrift auf der Farbe (hell/dunkel)
+  const inkOn = (hex) => { const n = parseInt(hex.slice(1), 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255; return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#14161b' : '#ffffff'; };
   // Kassenplaetze: Tuer = nur Eintritt/Workshops (ohne Inventar), Theke = Getraenke + Kursgebuehren (mit Inventar)
   const STATION = { tuer: 'Tür · Eintritt', theke: 'Theke · Bar', kombi: 'Tür + Theke' };
   const STATION_SHORT = { tuer: 'Tür', theke: 'Theke', kombi: 'Kombi' };
@@ -321,7 +327,8 @@
     for (const [cat, list] of [...byCat].sort((a, b) => Object.keys(CAT).indexOf(a[0]) - Object.keys(CAT).indexOf(b[0]))) {
       grid.append(h('div', { class: 'catlabel' }, CAT[cat] || cat), h('div', { class: 'pos' }, list.map((p) => {
         const badge = h('b', { class: 'qty', 'aria-hidden': 'true' });
-        const btn = h('button', { type: 'button', class: `prod${TICKET.includes(p.category) ? ' ticket' : ''}`, onclick: () => { cart.set(p.id, (cart.get(p.id) || 0) + 1); renderCart(); } }, h('span', {}, p.name), h('small', {}, eur(p.priceCents)), badge);
+        const btn = h('button', { type: 'button', class: `prod colored${TICKET.includes(p.category) ? ' ticket' : ''}`, onclick: () => { cart.set(p.id, (cart.get(p.id) || 0) + 1); renderCart(); } }, h('span', {}, p.name), h('small', {}, eur(p.priceCents)), badge);
+        const col = drinkColor(p); btn.style.setProperty('--c', col); btn.style.setProperty('--c-ink', inkOn(col));
         prodButtons.set(p.id, { btn, badge });
         return btn;
       })));
@@ -519,6 +526,7 @@
         h('tr', {}, h('td', {}, 'Getränke'), h('td', { class: 'num' }, eur(d.bar.revenueCents))),
         h('tr', {}, h('td', {}, 'Personalkosten'), h('td', { class: 'num' }, `− ${eur(d.personnel.totalCents)}`)),
         h('tr', {}, h('td', {}, 'Wareneinsatz Getränke'), h('td', { class: 'num' }, `− ${eur(d.totals.cogsCents || 0)}`)),
+        d.totals.ticketMaterialCents > 0 && h('tr', {}, h('td', {}, 'Eventbänder (Material Eintritt)'), h('td', { class: 'num' }, `− ${eur(d.totals.ticketMaterialCents)}`)),
         h('tr', {}, h('td', {}, 'Fixkosten'), h('td', { class: 'num' }, `− ${eur(d.totals.fixedCents)}`)),
         h('tr', {}, h('th', {}, 'Ergebnis'), h('th', { class: 'num' }, eur(d.totals.profitCents))))),
       h('p', { class: 'muted small' }, 'Wareneinsatz = verkaufte, gratis ausgegebene und fehlende Getränke zum Einkaufspreis netto. Kurseinnahmen zählen im Monat der Anmeldung bzw. Zahlung vor Ort.'));
@@ -874,15 +882,17 @@
       missingCost > 0 && h('p', { class: 'small muted' }, `Bei ${missingCost} Getränk${missingCost === 1 ? '' : 'en'} fehlt noch der Einkaufspreis – auf „Einkauf" tippen und nachtragen, dann stimmen Wareneinsatz und Marge.`),
       h('h2', {}, 'Getränke · Marge pro Glas'),
       h('div', { class: 'card table-wrap' }, drinks.length ? h('table', {}, h('tr', {}, h('th', {}, 'Getränk'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', { class: 'num' }, 'Einkauf'), h('th', { class: 'num' }, 'Marge'), h('th', { class: 'num' }, 'Marge %'), h('th', {}, '')),
-        drinks.map((p) => { const m = margin(p); return h('tr', { class: p.active ? '' : 'muted' }, h('td', { class: 'wrap' }, p.name, p.source && h('div', { class: 'small muted src' }, p.source)), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
+        drinks.map((p) => { const m = margin(p); const sw = h('input', { type: 'color', class: 'swatch', value: drinkColor(p), title: 'Farbe an der Kasse', 'aria-label': `Farbe für ${p.name}`, onchange: run(async (e) => { await api('PATCH', `/products/${p.id}`, { color: e.target.value }); toast('Farbe gespeichert'); }) });
+          return h('tr', { class: p.active ? '' : 'muted' }, h('td', { class: 'wrap' }, h('span', { class: 'name-sw' }, sw, h('span', {}, p.name)), p.source && h('div', { class: 'small muted src' }, p.source)), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
           h('td', { class: 'num' }, h('button', { type: 'button', class: `link${p.costCents == null ? ' missing' : ''}`, onclick: editMoney(p, 'costCents', 'Einkaufspreis netto') }, p.costCents == null ? 'fehlt' : eur(p.costCents))),
           h('td', { class: 'num' }, m ? eur(m.eur) : '–'), h('td', { class: `num ${m ? (m.pct >= 80 ? 'oktxt' : m.pct >= 70 ? 'warntxt' : 'badtxt') : 'muted'}` }, m ? `${m.pct} %` : '–'),
           h('td', { class: 'row' }, h('button', { type: 'button', class: 'link', onclick: editMoney(p, 'priceCents', 'Neuer Preis') }, 'Preis'), h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))); })) : h('p', { class: 'muted' }, 'Noch keine Getränke.')),
       h('h2', {}, 'Eintritt, Workshops, Kursgebühren'),
-      h('div', { class: 'card table-wrap' }, other.length ? h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', {}, '')),
-        other.map((p) => h('tr', { class: p.active ? '' : 'muted' }, h('td', {}, p.name), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
+      h('div', { class: 'card table-wrap' }, other.length ? h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', { class: 'num' }, 'Material pro Person'), h('th', {}, '')),
+        other.map((p) => h('tr', { class: p.active ? '' : 'muted' }, h('td', { class: 'wrap' }, p.name, p.source && h('div', { class: 'small muted src' }, p.source)), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
+          h('td', { class: 'num' }, h('button', { type: 'button', class: 'link', onclick: editMoney(p, 'costCents', 'Materialkosten pro Person (z. B. Eventband)') }, p.costCents == null ? '–' : eur(p.costCents))),
           h('td', { class: 'row' }, h('button', { type: 'button', class: 'link', onclick: editMoney(p, 'priceCents', 'Neuer Preis') }, 'Preis'), h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))))) : h('p', { class: 'muted' }, 'Noch nichts angelegt.')),
-      h('p', { class: 'muted small' }, 'Marge = Verkaufspreis − Einkaufspreis netto (ohne Pfand). Grün ab 80 %, gelb ab 70 %. Eintritt und Workshops zählen jeden Gast, haben aber kein Inventar. Für Workshop-Teilnehmer, die zum Übungsabend bleiben, ein Ticket mit 0 € anlegen. Ausgeblendete Artikel erscheinen nicht mehr an der Kasse; Preisänderungen gelten ab dem nächsten Verkauf.'));
+      h('p', { class: 'muted small' }, 'Farbfeld antippen, um die Button-Farbe an der Kasse zu ändern. Marge = Verkaufspreis − Einkaufspreis netto (ohne Pfand). Grün ab 80 %, gelb ab 70 %. „Material pro Person" bei Eintritt = z. B. Eventband (0,06 €), wird pro verkauftem Ticket als Kosten gerechnet. Eintritt und Workshops zählen jeden Gast, haben aber kein Inventar. Für Workshop-Teilnehmer, die zum Übungsabend bleiben, ein Ticket mit 0 € anlegen. Ausgeblendete Artikel erscheinen nicht mehr an der Kasse; Preisänderungen gelten ab dem nächsten Verkauf.'));
   }
 
   // ---------- Chef: Ziele & Kosten ----------

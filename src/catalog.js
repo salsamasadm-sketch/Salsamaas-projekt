@@ -7,21 +7,26 @@
  */
 const CATALOG = [
   // Softdrinks
-  { name: 'Wasser', priceCents: 350, category: 'softdrinks', costCents: 43, source: 'Adelholzener Classic/Naturell 0,5 l' },
-  { name: 'Coca-Cola', priceCents: 400, category: 'softdrinks', costCents: 52, source: 'Coca-Cola 0,33 l Dose' },
-  { name: 'Cola-Mix', priceCents: 400, category: 'softdrinks', costCents: 52, source: 'Annahme: Coca-Cola/Fanta 0,33 l Dose (je 0,52 €)' },
-  { name: 'Sprite', priceCents: 400, category: 'softdrinks', costCents: null },
-  { name: 'Apfelschorle', priceCents: 400, category: 'softdrinks', costCents: 54, source: 'Adelholzener Apfelschorle 0,5 l' },
-  { name: 'Johannisbeerschorle', priceCents: 400, category: 'softdrinks', costCents: 54, source: 'Adelholzener Johannisbeere 0,5 l' },
-  { name: 'Red Bull', priceCents: 500, category: 'softdrinks', costCents: 125, source: 'Red Bull 0,25 l Dose' },
+  { name: 'Wasser', color: '#5aaee0', priceCents: 350, category: 'softdrinks', costCents: 43, source: 'Adelholzener Classic/Naturell 0,5 l' },
+  { name: 'Coca-Cola', color: '#e41e2b', priceCents: 400, category: 'softdrinks', costCents: 52, source: 'Coca-Cola 0,33 l Dose' },
+  { name: 'Cola-Mix', color: '#b4561c', priceCents: 400, category: 'softdrinks', costCents: 52, source: 'Annahme: Coca-Cola/Fanta 0,33 l Dose (je 0,52 €)' },
+  { name: 'Sprite', color: '#00a651', priceCents: 400, category: 'softdrinks', costCents: null },
+  { name: 'Apfelschorle', color: '#e0a526', priceCents: 400, category: 'softdrinks', costCents: 54, source: 'Adelholzener Apfelschorle 0,5 l' },
+  { name: 'Johannisbeerschorle', color: '#7b1e4b', priceCents: 400, category: 'softdrinks', costCents: 54, source: 'Adelholzener Johannisbeere 0,5 l' },
+  { name: 'Red Bull', color: '#1f3f8f', priceCents: 500, category: 'softdrinks', costCents: 125, source: 'Red Bull 0,25 l Dose' },
   // Alkohol
-  { name: 'Helles', priceCents: 450, category: 'bier', costCents: 71, source: 'Augustiner Lagerbier Hell 0,5 l' },
-  { name: 'Sekt', priceCents: 500, category: 'wein', costCents: 56, source: 'Rotkäppchen 0,75 l (4,19 €) ÷ 7,5 Gläser à 0,1 l' },
-  { name: 'Weißwein', priceCents: 500, category: 'wein', costCents: null },
-  { name: 'Rotwein', priceCents: 500, category: 'wein', costCents: null },
-  { name: 'Hugo', priceCents: 800, category: 'cocktails', costCents: 60, source: 'City Hugo 0,2 l Flasche' },
-  { name: 'Aperol Spritz', priceCents: 800, category: 'cocktails', costCents: 210, source: 'Aperol Spritz 0,2 l (3er-Pack 6,29 €)' },
-  { name: 'Cuba Libre', priceCents: 800, category: 'longdrinks', costCents: 110, source: 'Havana Club 3 Años 0,7 l (12,99 €) 4 cl = 0,74 € + Cola 1,25 l PET 0,2 l = 0,23 € + 1/4 Limette 0,13 €' },
+  { name: 'Helles', color: '#f2c230', priceCents: 450, category: 'bier', costCents: 71, source: 'Augustiner Lagerbier Hell 0,5 l' },
+  { name: 'Sekt', color: '#e3cf8f', priceCents: 500, category: 'wein', costCents: 56, source: 'Rotkäppchen 0,75 l (4,19 €) ÷ 7,5 Gläser à 0,1 l' },
+  { name: 'Weißwein', color: '#d6df8a', priceCents: 500, category: 'wein', costCents: null },
+  { name: 'Rotwein', color: '#7b1e2b', priceCents: 500, category: 'wein', costCents: null },
+  { name: 'Hugo', color: '#8cc63f', priceCents: 800, category: 'cocktails', costCents: 60, source: 'City Hugo 0,2 l Flasche' },
+  { name: 'Aperol Spritz', color: '#f26b21', priceCents: 800, category: 'cocktails', costCents: 210, source: 'Aperol Spritz 0,2 l (3er-Pack 6,29 €)' },
+  { name: 'Cuba Libre', color: '#4a2c1a', priceCents: 800, category: 'longdrinks', costCents: 110, source: 'Havana Club 3 Años 0,7 l (12,99 €) 4 cl = 0,74 € + Cola 1,25 l PET 0,2 l = 0,23 € + 1/4 Limette 0,13 €' },
 ];
 
-module.exports = { CATALOG };
+/** Farben fuer Eintritt/Workshops/Kursgebuehren und als Rueckfall nach Namen (Kassen-Buttons) */
+const CATEGORY_COLORS = { eintritt: '#14161b', workshop: '#c2185b', kursgebuehr: '#2b6cb0', softdrinks: '#5aaee0', bier: '#f2c230', wein: '#d6df8a', cocktails: '#f26b21', longdrinks: '#4a2c1a', shots: '#8d6e63', heiss: '#795548', snacks: '#a1887f', sonstiges: '#8a93a3' };
+/** Eventbaender (METRO, Tyvek neongelb): 1 Band pro Gast, Annahme 100er-Pack 5,99 € -> 0,06 € */
+const WRISTBAND_CENTS = 6;
+
+module.exports = { CATALOG, CATEGORY_COLORS, WRISTBAND_CENTS };

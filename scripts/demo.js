@@ -31,11 +31,11 @@ async function seedInto(store) {
     .map(([name, priceCents, category], i) => ({ id: `k${i + 1}`, name, priceCents, category, active: true, sort: 5 + i, createdAt: new Date(now).toISOString() }));
   for (const p of fees) await store.putDoc('products', p);
   const tickets = [['Eintritt Übungsabend', 800, 'eintritt'], ['Workshop + Party', 2500, 'workshop'], ['Workshop-Teilnehmer inkl.', 0, 'eintritt']]
-    .map(([name, priceCents, category], i) => ({ id: `t${i + 1}`, name, priceCents, category, active: true, sort: i, createdAt: new Date(now).toISOString() }));
+    .map(([name, priceCents, category], i) => ({ id: `t${i + 1}`, name, priceCents, category, costCents: 6, source: 'Eventband (METRO Tyvek, Annahme 100er-Pack 5,99 €)', active: true, sort: i, createdAt: new Date(now).toISOString() }));
   for (const p of tickets) await store.putDoc('products', p);
   // Echte Salsamas-Getraenkekarte mit Einkaufspreisen aus der METRO-Rechnung
   const { CATALOG } = require('../src/catalog');
-  const products = CATALOG.map((c, i) => ({ id: `p${i + 1}`, name: c.name, priceCents: c.priceCents, costCents: c.costCents, source: c.source, category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date(now).toISOString() }));
+  const products = CATALOG.map((c, i) => ({ id: `p${i + 1}`, name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, source: c.source, category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date(now).toISOString() }));
   for (const p of products) await store.putDoc('products', p);
 
   // Beschaeftigungsart: Minijob (Bar/Tuer) oder auf Rechnung (Trainer)
