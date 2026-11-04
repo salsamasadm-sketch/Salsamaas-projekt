@@ -129,7 +129,7 @@
     const shell = h('div', { class: 'login' },
       h('div', { class: 'login-hero' },
         h('p', { class: 'count', 'aria-hidden': 'true' }, '1 · 2 · 3 · ', h('span', {}, '4'), ' · 5 · 6 · 7 · ', h('span', {}, '8')),
-        document.body.classList.contains('has-logo') ? h('img', { class: 'logo-xl', src: document.querySelector('.logo-img').src, alt: 'Salsamás' }) : h('h1', { class: 'wordmark-xl' }, 'Salsamás'),
+        document.body.classList.contains('has-logo') ? h('h1', { class: 'logo-h1' }, h('img', { class: 'logo-xl logo-light', src: document.querySelector('.logo-img.logo-light').src, alt: 'Tanzschule Salsamás' }), h('img', { class: 'logo-xl logo-dark', src: (document.querySelector('.logo-img.logo-dark') || document.querySelector('.logo-img')).src, alt: '' })) : h('h1', { class: 'wordmark-xl' }, 'Salsamás'),
         h('p', { class: 'login-sub' }, 'Kasse, Stunden und Überblick für Maxvorstadt und Pasing.')),
       wrap);
     const render = () => {
@@ -271,7 +271,7 @@
       cartBox.replaceChildren(
         h('div', { class: 'row spread receipt-head' }, h('span', { class: 'eyebrow' }, 'Bon'), h('span', { class: 'total' }, eur(total))),
         cart.size ? h('ul', { class: 'cartlist' }, [...cart.entries()].map(([id, q]) => h('li', {}, h('span', {}, `${q}× ${priceOf.get(id).name}`), h('span', { class: 'row' }, eur(q * priceOf.get(id).priceCents), h('button', { type: 'button', class: 'ghost', onclick: () => { q > 1 ? cart.set(id, q - 1) : cart.delete(id); renderCart(); } }, '−'))))) : h('p', { class: 'muted small' }, 'Getränk antippen, dann Zahlart wählen.'),
-        [...cart.keys()].some((id) => priceOf.get(id).category === FEE) && h('label', { class: 'fee-ref' }, 'Kursgebühr für wen? (Vorname oder Bsport-ID, optional)', h('input', { id: 'fee-ref', maxlength: 60, autocomplete: 'off', placeholder: 'z. B. Anna K. oder bs-1234', value: feeRef, oninput: (e) => { feeRef = e.target.value; } })),
+        [...cart.keys()].some((id) => priceOf.get(id).category === FEE) ? h('label', { class: 'fee-ref' }, 'Kursgebühr für wen? (Vorname oder Bsport-ID, optional)', h('input', { id: 'fee-ref', maxlength: 60, autocomplete: 'off', placeholder: 'z. B. Anna K. oder bs-1234', value: feeRef, oninput: (e) => { feeRef = e.target.value; } })) : '',
         h('div', { class: 'grid3' },
           h('button', { class: 'btn', type: 'button', disabled: !cart.size, onclick: pay('bar') }, 'Bar'),
           h('button', { class: 'btn', type: 'button', disabled: !cart.size, onclick: pay('karte') }, 'Karte'),
@@ -697,7 +697,7 @@
   }
 
   // Echtes Logo verwenden, sobald logo.svg / logo.png vorhanden ist (sonst Schriftzug)
-  const logoImg = document.querySelector('.logo-img');
+  const logoImg = document.querySelector('.logo-img.logo-light');
   const useLogo = () => { if (logoImg && logoImg.naturalWidth) document.body.classList.add('has-logo'); };
   if (logoImg) { if (logoImg.complete) useLogo(); else logoImg.addEventListener('load', () => { useLogo(); if (current === 'login') route('login'); }); }
 
