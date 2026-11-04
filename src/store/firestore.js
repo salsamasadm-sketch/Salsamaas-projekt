@@ -2,7 +2,7 @@
 const crypto = require('node:crypto');
 const { Firestore } = require('@google-cloud/firestore');
 
-const DOC_COLLECTIONS = ['staff', 'shifts', 'settings', 'products', 'barsessions', 'sales'];
+const DOC_COLLECTIONS = ['staff', 'shifts', 'settings', 'products', 'barsessions', 'sales', 'plan', 'invoices'];
 
 /** Dauerhafter Speicher fuer Google Cloud (Cloud Run nutzt automatisch das Service-Konto). */
 class FirestoreStore {

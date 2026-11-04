@@ -40,8 +40,9 @@ async function seedInto(store) {
   ].map(([name, priceCents, category], i) => ({ id: `p${i + 1}`, name, priceCents, category, active: true, sort: i * 10, createdAt: new Date(now).toISOString() }));
   for (const p of products) await store.putDoc('products', p);
 
-  const staff = [['lena', 1390], ['marco', 1500], ['sofia', 1390], ['diego', 2500]];
-  for (const [ref, rate] of staff) await store.putDoc('staff', { id: ref, ref, pinHash: hashPin('123456'), hourlyRateCents: rate, active: true, createdAt: new Date(now).toISOString() });
+  // Beschaeftigungsart: Minijob (Bar/Tuer) oder auf Rechnung (Trainer)
+  const staff = [['lena', 1390, 'minijob'], ['marco', 1500, 'minijob'], ['sofia', 1390, 'minijob'], ['diego', 2500, 'rechnung'], ['carmen', 3500, 'rechnung']];
+  for (const [ref, rate, employment] of staff) await store.putDoc('staff', { id: ref, ref, pinHash: hashPin('123456'), hourlyRateCents: rate, employment, active: true, createdAt: new Date(now).toISOString() });
 
   await store.putDoc('settings', { id: 'main', targets: { utilizationPct: 75, openPaymentsPct: 5, barPerGuestCents: 600, barPersonnelPct: 30 }, fixedCostsCents: { maxvorstadt: 320000, pasing: 210000 }, minijobLimitCents: 60300 });
 
@@ -117,6 +118,34 @@ async function seedInto(store) {
   const helperDays = [12, 5].map((d) => new Date(now - d * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }));
   await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: 'Carla', helper: true, kind: 'bar', location: 'maxvorstadt', start: new Date(`${helperDays[0]}T20:30:00+01:00`).toISOString(), end: new Date(`${helperDays[0]}T23:45:00+01:00`).toISOString(), rateCents: 1390, payout: 'bar', paid: true, createdBy: 'kasse' });
   await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: 'Jonas', helper: true, kind: 'empfang', location: 'pasing', start: new Date(`${helperDays[1]}T19:45:00+01:00`).toISOString(), end: new Date(`${helperDays[1]}T22:50:00+01:00`).toISOString(), rateCents: 1500, payout: 'ueberweisung', paid: false, createdBy: 'kasse' });
+  // Wochenplan: Vorwoche, diese Woche, naechste Woche (diese Woche mit absichtlichem Konflikt und offenem Einsatz)
+  {
+    const today = new Date(now).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+    const monday = (d) => { const t = new Date(`${d}T12:00:00Z`); t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7)); return t.toISOString().slice(0, 10); };
+    const plus = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const template = [
+      [0, '19:00', '20:15', 'maxvorstadt', 'kurs', 'Salsa Beginner 1', 'diego'], [0, '20:15', '21:30', 'maxvorstadt', 'kurs', 'Salsa Beginner 2', 'diego'],
+      [1, '19:30', '20:45', 'pasing', 'kurs', 'Kizomba Basics', 'carmen'],
+      [2, '19:00', '20:15', 'maxvorstadt', 'kurs', 'Bachata Beginner', 'carmen'], [2, '20:30', '23:30', 'pasing', 'empfang', 'Übungsabend Tür', 'sofia'], [2, '20:30', '23:30', 'pasing', 'bar', 'Übungsabend Theke', 'lena'],
+      [3, '19:00', '20:15', 'pasing', 'kurs', 'Salsa Beginner Pasing', 'diego'],
+      [4, '20:30', '00:30', 'maxvorstadt', 'empfang', 'Übungsabend Tür', 'sofia'], [4, '20:30', '00:30', 'maxvorstadt', 'bar', 'Übungsabend Theke', 'lena'], [4, '20:30', '00:30', 'maxvorstadt', 'bar', 'Übungsabend Theke 2', 'marco'],
+      [5, '15:00', '18:00', 'maxvorstadt', 'workshop', 'Bachata Sensual Workshop', null, 'Luis (Gasttrainer)', 25000],
+      [5, '20:30', '01:00', 'maxvorstadt', 'bar', 'Salsa Party Theke', 'lena'], [5, '20:30', '01:00', 'maxvorstadt', 'empfang', 'Salsa Party Tür', null],
+      [5, '20:00', '00:00', 'pasing', 'kombi', 'Bachata Social', 'marco'],
+    ];
+    for (const [wk, extra] of [[-7, false], [0, true], [7, false]]) {
+      const mon = plus(monday(today), wk);
+      for (const [d, start, end, location, kind, title, staffRef, guestName, feeCents] of template) {
+        await store.putDoc('plan', { id: crypto.randomUUID(), date: plus(mon, d), start, end, location, kind, title, staffRef: staffRef || null, guestName: guestName || null, feeCents: feeCents ?? null });
+      }
+      // diese Woche: Marco zusaetzlich an der Theke Maxvorstadt -> Doppelbuchung mit Pasing
+      if (extra) await store.putDoc('plan', { id: crypto.randomUUID(), date: plus(mon, 5), start: '21:00', end: '01:00', location: 'maxvorstadt', kind: 'bar', title: 'Salsa Party Theke 2', staffRef: 'marco', guestName: null, feeCents: null });
+    }
+    // Rechnung von Diego fuer den Vormonat: eingegangen, noch nicht bezahlt
+    const [y, m] = today.slice(0, 7).split('-').map(Number);
+    const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+    await store.putDoc('invoices', { id: `diego_${prev}`, staffId: 'diego', month: prev, status: 'erhalten' });
+  }
   // Unterricht (Tanzlehrer diego)
   for (let d = 45; d >= 1; d--) {
     const day = new Date(now - d * 86_400_000);

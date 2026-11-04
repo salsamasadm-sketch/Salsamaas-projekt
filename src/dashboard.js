@@ -1,5 +1,6 @@
 'use strict';
 const { computeSettlement, billedHours } = require('./bar');
+const { computeInvoices } = require('./plan');
 /**
  * Rechnet aus den Rohdaten die Chef-Uebersicht: Kennzahlen mit Ampel, To-dos und Verbesserungsideen.
  * Reine Funktion (keine Datenbank), damit sie leicht testbar ist.
@@ -71,7 +72,7 @@ function proratedFixed(monthlyCents, r) {
   return Math.round(total);
 }
 
-function computeDashboard({ month, from, to, compare = true, now = new Date(), courses = [], enrollments = [], staff = [], shifts = [], barsessions = [], sales = [], products = [], settings }) {
+function computeDashboard({ month, from, to, compare = true, invoices = [], now = new Date(), courses = [], enrollments = [], staff = [], shifts = [], barsessions = [], sales = [], products = [], settings }) {
   const cfg = mergeSettings(settings);
   const t = cfg.targets;
   const range = rangeOf({ month, from, to });
@@ -107,7 +108,7 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
     const mine = monthShifts.filter((s) => s.staffRef === p.ref && !s.helper);
     const earned = sum(mine, (s) => shiftCost(s, now));
     const mjEarned = sum(shifts.filter((s) => s.staffRef === p.ref && berlinDate(s.start).slice(0, 7) === mjMonth), (s) => shiftCost(s, now));
-    return { ref: p.ref, active: p.active !== false, hours: Math.round(sum(mine, (s) => shiftHours(s, now)) * 10) / 10, earnedCents: earned, minijobMonth: mjMonth, minijobEarnedCents: mjEarned, minijobPct: cfg.minijobLimitCents ? Math.round((mjEarned / cfg.minijobLimitCents) * 100) : null };
+    return { ref: p.ref, employment: p.employment || 'minijob', active: p.active !== false, hours: Math.round(sum(mine, (s) => shiftHours(s, now)) * 10) / 10, earnedCents: earned, minijobMonth: mjMonth, minijobEarnedCents: mjEarned, minijobPct: cfg.minijobLimitCents ? Math.round((mjEarned / cfg.minijobLimitCents) * 100) : null };
   });
 
   // --- Kurse (aktuelles Angebot) ---
@@ -179,12 +180,20 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
     todos.push({ level: 'bad', tab: 'bar', text: `Keine Kasse am ${d.split('-').reverse().join('.')} (${LOC_LABEL[loc]}), obwohl eine Bar-Schicht lief.` });
   }
   if (openEnr.length > 0) todos.push({ level: openPaymentsPct > t.openPaymentsPct ? 'bad' : 'warn', tab: 'kurse', text: `${openEnr.length} offene Zahlungen über ${eur(openOwed)} nachhalten.` });
-  for (const p of byStaff.filter((x) => x.active && x.minijobPct >= 85)) {
+  for (const p of byStaff.filter((x) => x.active && x.employment === 'minijob' && x.minijobPct >= 85)) {
     todos.push({ level: p.minijobPct >= 100 ? 'bad' : 'warn', tab: 'personal', text: `${p.ref} hat im ${mjMonth.split('-').reverse().join('/')} ${p.minijobPct} % der Minijob-Grenze erreicht (${eur(p.minijobEarnedCents)} von ${eur(cfg.minijobLimitCents)}). Einsätze diesen Monat planen.` });
   }
   // Aushilfen, deren Lohn noch ueberwiesen werden muss (unabhaengig vom Zeitraum)
   for (const s of shifts.filter((x) => x.helper && x.payout === 'ueberweisung' && !x.paid)) {
     todos.push({ level: 'warn', tab: 'personal', text: `Aushilfe ${s.staffRef}: ${eur(shiftCost(s, now))} überweisen (Minijob) – ${shiftHours(s, now).toLocaleString('de-DE')} Std. am ${berlinDate(s.start).split('-').reverse().join('.')}.` });
+  }
+  // Trainer auf Rechnung: Rechnung fuer den Vormonat noch nicht bezahlt
+  {
+    const [y, m] = berlinDate(now).slice(0, 7).split('-').map(Number);
+    const prevMonth = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+    for (const inv of computeInvoices({ month: prevMonth, staff, shifts, invoices }).filter((i) => i.amountCents > 0 && i.status !== 'bezahlt')) {
+      todos.push({ level: 'warn', tab: 'personal', text: `Rechnung ${inv.ref} für ${prevMonth.split('-').reverse().join('/')}: ${eur(inv.amountCents)} (${inv.hours.toLocaleString('de-DE')} Std.) – ${inv.status === 'erhalten' ? 'erhalten, noch bezahlen' : 'noch nicht eingegangen'}.` });
+    }
   }
   if (fixedMonthly === 0) todos.push({ level: 'info', tab: 'ziele', text: 'Fixkosten (Miete usw.) hinterlegen, damit das Ergebnis stimmt.' });
 

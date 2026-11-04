@@ -6,6 +6,7 @@ const { rateLimit } = require('express-rate-limit');
 const { hashPin, verifyPin } = require('./session');
 const { sha256 } = require('./auth');
 const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = require('./dashboard');
+const { computeWeek, computeInvoices, mondayOf, addDays, KINDS: PLAN_KINDS } = require('./plan');
 const { computeSettlement, buildHelpers, helperShift, STATIONS, stationOf, allowedAtStation, stationForKind } = require('./bar');
 const S = require('./schemas');
 
@@ -43,14 +44,20 @@ const saleSchema = z.object({ note: z.string().trim().min(1).max(60).refine((s) 
 const helperIn = z.object({ name: z.string().trim().min(2).max(40).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen'), start: iso, end: iso, rateCents: cents(10_000), payout: z.enum(['bar', 'ueberweisung']) }).strict()
   .refine((h) => new Date(h.end) > new Date(h.start) && new Date(h.end) - new Date(h.start) <= 16 * 3_600_000, 'Aushilfe: Ende muss nach Beginn liegen (max. 16 Std.)');
 const sessionClose = z.object({ helpers: z.array(helperIn).max(10).default([]), cashEndCents: cents(10_000_000), cashOutCents: cents(10_000_000).default(0), stockEnd: stock.default({}), restock: stock.default({}), guests: z.number().int().min(0).max(3000).optional(), note: note.optional() }).strict();
-const staffCreate = z.object({ ref, pin, hourlyRateCents: cents(20_000), active: z.boolean().default(true) }).strict();
-const staffPatch = z.object({ pin: pin.optional(), hourlyRateCents: cents(20_000).optional(), active: z.boolean().optional() }).strict()
+const EMPLOY = z.enum(['minijob', 'rechnung', 'angestellt']);
+const staffCreate = z.object({ ref, pin, hourlyRateCents: cents(20_000), employment: EMPLOY.default('minijob'), active: z.boolean().default(true) }).strict();
+const staffPatch = z.object({ pin: pin.optional(), hourlyRateCents: cents(20_000).optional(), employment: EMPLOY.optional(), active: z.boolean().optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
 const settingsSchema = z.object({
   targets: z.object({ utilizationPct: z.number().min(0).max(100), openPaymentsPct: z.number().min(0).max(100), barPerGuestCents: cents(100_000), barPersonnelPct: z.number().min(0).max(200) }).strict(),
   fixedCostsCents: z.object({ maxvorstadt: cents(100_000_000), pasing: cents(100_000_000) }).strict(),
   minijobLimitCents: cents(1_000_000),
 }).strict();
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Uhrzeit HH:MM');
+const short = (max) => z.string().trim().min(1).max(max).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen');
+const slotBase = { date, start: hhmm, end: hhmm, location: LOC, kind: z.enum(Object.keys(PLAN_KINDS)), title: short(60).optional(), staffRef: ref.optional().nullable(), guestName: short(40).optional().nullable(), feeCents: cents(1_000_000).optional().nullable(), note: short(200).optional() };
+const slotCreate = z.object(slotBase).strict();
+const slotPatch = z.object(Object.fromEntries(Object.entries(slotBase).map(([k, v]) => [k, v.optional()]))).strict();
 const monthQ = (q) => (/^\d{4}-\d{2}$/.test(q || '') ? q : null);
 const dayQ = (q) => (/^\d{4}-\d{2}-\d{2}$/.test(q || '') && !Number.isNaN(Date.parse(q)) ? q : null);
 /** Zeitraum aus ?from=&to= (max. 2 Jahre) oder ?month=; sonst null bzw. der aktuelle Monat */
@@ -296,10 +303,75 @@ function createTeamRouter({ store, keys, sessions, logger }) {
   // --- Nur Chef ---
   r.get('/dashboard', owner, wrap(async (req, res) => {
     const range = rangeQ(req.query, true);
-    const [courses, enrollments, staff, shifts, barsessions, sales, products, settings] = await Promise.all([
-      store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'),
+    const [courses, enrollments, staff, shifts, barsessions, sales, products, settings, invoices] = await Promise.all([
+      store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'), store.listDocs('invoices'),
     ]);
-    res.json(computeDashboard({ ...range, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
+    res.json(computeDashboard({ ...range, invoices, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
+  }));
+
+  // --- Wochenplan (Chef) ---
+  r.get('/plan', owner, wrap(async (req, res) => {
+    const week = dayQ(req.query.week) || berlinDate(new Date());
+    const [plan, staff, shifts, settings] = await Promise.all([store.listDocs('plan'), store.listDocs('staff'), store.listDocs('shifts'), store.getDoc('settings', 'main')]);
+    res.json(computeWeek({ week, plan, staff, shifts, settings: mergeSettings(settings) }));
+  }));
+  const checkSlot = async (d, res) => {
+    if (d.staffRef && !(await store.getDoc('staff', d.staffRef.toLowerCase()))) { res.status(400).json({ error: 'validation_failed', details: [{ path: 'staffRef', message: 'Person nicht gefunden' }] }); return false; }
+    return true;
+  };
+  r.post('/plan', owner, wrap(async (req, res) => {
+    const d = parse(slotCreate, req.body, res); if (!d) return;
+    if (!(await checkSlot(d, res))) return;
+    const slot = { id: crypto.randomUUID(), ...d, createdAt: new Date().toISOString() };
+    await store.putDoc('plan', slot); log(req, 'plan_added');
+    res.status(201).json(slot);
+  }));
+  r.patch('/plan/:id', owner, wrap(async (req, res) => {
+    const d = parse(slotPatch, req.body, res); if (!d) return;
+    const cur = S.id.safeParse(req.params.id).success ? await store.getDoc('plan', req.params.id) : null;
+    if (!cur) return res.status(404).json({ error: 'not_found' });
+    if (!(await checkSlot(d, res))) return;
+    const next = { ...cur, ...d, updatedAt: new Date().toISOString() };
+    await store.putDoc('plan', next); log(req, 'plan_updated');
+    res.json(next);
+  }));
+  r.delete('/plan/:id', owner, wrap(async (req, res) => {
+    if (!S.id.safeParse(req.params.id).success || !(await store.removeDoc('plan', req.params.id))) return res.status(404).json({ error: 'not_found' });
+    log(req, 'plan_deleted'); res.sendStatus(204);
+  }));
+  // Woche kopieren (z. B. Vorlage in die naechste Woche uebernehmen)
+  r.post('/plan/copy', owner, wrap(async (req, res) => {
+    const d = parse(z.object({ from: date, to: date }).strict(), req.body, res); if (!d) return;
+    const src = mondayOf(d.from), dst = mondayOf(d.to);
+    if (src === dst) return res.status(400).json({ error: 'validation_failed', details: [{ path: 'to', message: 'andere Woche wählen' }] });
+    const shift = Math.round((Date.parse(dst) - Date.parse(src)) / 86_400_000);
+    const all = await store.listDocs('plan');
+    const existing = new Set(all.filter((s) => s.date >= dst && s.date <= addDays(dst, 6)).map((s) => `${s.date}_${s.start}_${s.location}_${s.kind}_${s.staffRef || s.guestName || ''}`));
+    let n = 0;
+    for (const s of all.filter((x) => x.date >= src && x.date <= addDays(src, 6))) {
+      const copy = { ...s, id: crypto.randomUUID(), date: addDays(s.date, shift), createdAt: new Date().toISOString() };
+      delete copy.updatedAt;
+      const k = `${copy.date}_${copy.start}_${copy.location}_${copy.kind}_${copy.staffRef || copy.guestName || ''}`;
+      if (existing.has(k)) continue;
+      await store.putDoc('plan', copy); n++;
+    }
+    log(req, 'plan_copied'); res.json({ copied: n });
+  }));
+
+  // --- Rechnungen der Trainer auf Rechnung ---
+  r.get('/invoices', owner, wrap(async (req, res) => {
+    const month = monthQ(req.query.month) || berlinDate(new Date()).slice(0, 7);
+    const [staff, shifts, invoices] = await Promise.all([store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('invoices')]);
+    res.json(computeInvoices({ month, staff, shifts, invoices }));
+  }));
+  r.put('/invoices/:staffId/:month', owner, wrap(async (req, res) => {
+    const d = parse(z.object({ status: z.enum(['offen', 'erhalten', 'bezahlt']) }).strict(), req.body, res); if (!d) return;
+    const month = monthQ(req.params.month);
+    const p = /^[a-z0-9_.-]{2,30}$/.test(req.params.staffId) ? await store.getDoc('staff', req.params.staffId) : null;
+    if (!p || !month) return res.status(404).json({ error: 'not_found' });
+    const doc = { id: `${p.id}_${month}`, staffId: p.id, month, status: d.status, updatedAt: new Date().toISOString() };
+    await store.putDoc('invoices', doc); log(req, 'invoice_status');
+    res.json(doc);
   }));
 
   r.get('/year', owner, wrap(async (req, res) => {
@@ -365,7 +437,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const d = parse(staffCreate, req.body, res); if (!d) return;
     const id = d.ref.toLowerCase();
     if (await store.getDoc('staff', id)) return res.status(409).json({ error: 'already_exists' });
-    const p = { id, ref: d.ref, pinHash: hashPin(d.pin), hourlyRateCents: d.hourlyRateCents, active: d.active, createdAt: new Date().toISOString() };
+    const p = { id, ref: d.ref, pinHash: hashPin(d.pin), hourlyRateCents: d.hourlyRateCents, employment: d.employment, active: d.active, createdAt: new Date().toISOString() };
     await store.putDoc('staff', p); log(req, 'staff_created');
     res.status(201).json(publicStaff(p));
   }));

@@ -76,7 +76,7 @@
   $('#logout').addEventListener('click', logout);
 
   // ---------- Navigation ----------
-  const TABS_OWNER = [['heute', 'Heute'], ['jahr', 'Jahr'], ['kasse', 'Kasse'], ['bar', 'Abrechnungen'], ['einkauf', 'Einkauf'], ['personal', 'Personal'], ['kurse', 'Kurse'], ['artikel', 'Getränke'], ['ziele', 'Ziele & Kosten']];
+  const TABS_OWNER = [['heute', 'Heute'], ['plan', 'Wochenplan'], ['jahr', 'Jahr'], ['kasse', 'Kasse'], ['bar', 'Abrechnungen'], ['einkauf', 'Einkauf'], ['personal', 'Personal'], ['kurse', 'Kurse'], ['artikel', 'Getränke'], ['ziele', 'Ziele & Kosten']];
   const TABS_STAFF = [['zeit', 'Meine Zeit'], ['kasse', 'Kasse']];
   let current = null;
   let timerHandle;
@@ -92,7 +92,7 @@
     for (const [id, label] of auth.role === 'owner' ? TABS_OWNER : TABS_STAFF) {
       tabs.append(h('button', { type: 'button', class: id === name ? 'active' : '', onclick: () => route(id) }, label));
     }
-    const views = { jahr: viewJahr, einkauf: viewEinkauf, heute: viewHeute, kasse: viewKasse, bar: viewBar, personal: viewPersonal, kurse: viewKurse, artikel: viewArtikel, ziele: viewZiele, zeit: viewZeit, abrechnung: viewAbrechnung };
+    const views = { plan: viewPlan, jahr: viewJahr, einkauf: viewEinkauf, heute: viewHeute, kasse: viewKasse, bar: viewBar, personal: viewPersonal, kurse: viewKurse, artikel: viewArtikel, ziele: viewZiele, zeit: viewZeit, abrechnung: viewAbrechnung };
     show(h('p', { class: 'muted' }, 'Lädt …'));
     Promise.resolve(views[name](arg)).then((el) => { if (current === name) show(el); }).catch((e) => show(h('div', { class: 'card' }, h('p', {}, e.message))));
   }
@@ -493,7 +493,7 @@
 
   async function viewHeute() {
     const d = await api('GET', `/dashboard?${pq()}`);
-    const go = { einkauf: 'einkauf', bar: 'bar', personal: 'personal', kurse: 'kurse', ziele: 'ziele', kasse: 'kasse' };
+    const go = { plan: 'plan', einkauf: 'einkauf', bar: 'bar', personal: 'personal', kurse: 'kurse', ziele: 'ziele', kasse: 'kasse' };
     const SEV = { bad: 'Dringend', warn: 'Bald', info: 'Hinweis', ok: 'Gut' };
     const items = (list) => (list.length ? h('ul', { class: 'list' }, list.map((t) => h('li', { class: t.level }, h('span', { class: `sev ${t.level}` }, SEV[t.level] || ''), h('span', { class: 'list-text' }, t.text), t.tab && go[t.tab] && h('button', { type: 'button', class: 'link', onclick: () => route(go[t.tab]) }, 'öffnen')))) : h('p', { class: 'muted' }, 'Nichts offen.'));
     const profit = d.kpis.find((k) => k.id === 'profit');
@@ -558,6 +558,97 @@
       const v = svg('text', { x: xx + bw / 2, y: H - pad - bh - 4, 'text-anchor': 'middle', class: 'axis' }); v.textContent = Math.round(x.revenueCents / 100); s.append(v);
     });
     return s;
+  }
+
+  // ---------- Chef: Wochenplan ----------
+  const PLAN_KIND = { kurs: 'Unterricht', workshop: 'Workshop', uebungsabend: 'Übungsabend', party: 'Party', bar: 'Theke', empfang: 'Tür', kombi: 'Tür + Theke', sonstiges: 'Sonstiges' };
+  const EMPLOY = { minijob: 'Minijob', rechnung: 'Auf Rechnung', angestellt: 'Angestellt' };
+  let planWeek = null;
+  async function viewPlan() {
+    if (!planWeek) planWeek = todayStr();
+    const [w, staff] = await Promise.all([api('GET', `/plan?week=${planWeek}`), api('GET', '/staff')]);
+    const go = (n) => () => { planWeek = addDays(w.week, n * 7); route('plan'); };
+    const hrs = (x) => x.toLocaleString('de-DE', { maximumFractionDigits: 2 });
+
+    const slotForm = (slot, date) => {
+      const v = slot || { date: date || w.week, start: '19:00', end: '20:15', location: loc, kind: 'kurs', title: '', staffRef: null, guestName: null, feeCents: null, note: '' };
+      const f = {
+        date: h('input', { type: 'date', id: 'pl-date', value: v.date, required: true }),
+        start: h('input', { type: 'time', id: 'pl-start', value: v.start, required: true }),
+        end: h('input', { type: 'time', id: 'pl-end', value: v.end, required: true }),
+        location: select(LOC, v.location, { id: 'pl-loc' }),
+        kind: select(PLAN_KIND, v.kind, { id: 'pl-kind' }),
+        title: h('input', { id: 'pl-title', maxlength: 60, value: v.title || '', placeholder: 'z. B. Salsa Beginner 2, Bachata Workshop' }),
+        who: select({ '': '— noch offen —', ...Object.fromEntries(staff.filter((p) => p.active !== false).map((p) => [p.ref, `${p.ref} · ${EMPLOY[p.employment || 'minijob']}`])), __guest: 'Gast / extern …' }, v.staffRef || (v.guestName ? '__guest' : ''), { id: 'pl-who' }),
+        guest: h('input', { id: 'pl-guest', maxlength: 40, value: v.guestName || '', placeholder: 'Name Gasttrainer' }),
+        fee: h('input', { id: 'pl-fee', inputmode: 'decimal', value: v.feeCents != null ? fromCents(v.feeCents) : '', placeholder: 'leer = Stundenlohn' }),
+        note: h('input', { id: 'pl-note', maxlength: 200, value: v.note || '', placeholder: 'optional' }),
+      };
+      const guestWrap = field('Gast / extern', f.guest);
+      const syncGuest = () => { guestWrap.hidden = f.who.value !== '__guest'; };
+      f.who.addEventListener('change', syncGuest); syncGuest();
+      const close = () => box.remove();
+      const box = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' },
+        h('form', { class: 'modal-card plan-form', onsubmit: run(async () => {
+          const fee = f.fee.value.trim() ? toCents(f.fee.value) : null;
+          if (f.fee.value.trim() && fee == null) throw new Error('Pauschale prüfen');
+          const body = { date: f.date.value, start: f.start.value, end: f.end.value, location: f.location.value, kind: f.kind.value, ...(f.title.value.trim() ? { title: f.title.value.trim() } : {}),
+            staffRef: f.who.value && f.who.value !== '__guest' ? f.who.value : null, guestName: f.who.value === '__guest' && f.guest.value.trim() ? f.guest.value.trim() : null, feeCents: fee, ...(f.note.value.trim() ? { note: f.note.value.trim() } : {}) };
+          if (slot) await api('PATCH', `/plan/${slot.id}`, body); else await api('POST', '/plan', body);
+          close(); toast(slot ? 'Einsatz geändert' : 'Einsatz eingeplant'); planWeek = body.date; route('plan');
+        }) },
+        h('p', {}, slot ? 'Einsatz bearbeiten' : 'Einsatz einplanen'),
+        h('div', { class: 'grid2' }, field('Was', f.kind), field('Wo', f.location), field('Tag', f.date), h('div', { class: 'grid2 tight' }, field('Von', f.start), field('Bis', f.end))),
+        field('Titel', f.title),
+        h('div', { class: 'grid2' }, field('Wer', f.who), field('Pauschale €', f.fee)), guestWrap, field('Notiz', f.note),
+        h('div', { class: 'row' }, h('button', { class: 'btn', type: 'submit' }, 'Speichern'), h('button', { class: 'btn secondary', type: 'button', onclick: close }, 'Abbrechen'),
+          slot && h('button', { class: 'link danger', type: 'button', onclick: run(async () => { await api('DELETE', `/plan/${slot.id}`); close(); toast('Einsatz gelöscht'); route('plan'); }) }, 'löschen'))));
+      document.body.append(box); f.title.focus();
+    };
+
+    const conflictIds = new Map();
+    for (const c of w.conflicts) for (const id of c.slotIds) if (!conflictIds.has(id) || c.level === 'bad') conflictIds.set(id, c.level);
+    const slotCard = (s) => h('button', { type: 'button', class: `slot k-${s.kind} l-${s.location}${s.unassigned ? ' open' : ''}${conflictIds.has(s.id) ? ` c-${conflictIds.get(s.id)}` : ''}${s.past ? ' past' : ''}`, onclick: () => slotForm(s) },
+      h('span', { class: 'slot-time' }, `${s.start}–${s.end}`),
+      h('span', { class: 'slot-title' }, s.title || s.kindLabel),
+      h('span', { class: 'slot-meta' }, h('span', { class: 'slot-loc' }, s.location === 'pasing' ? 'PAS' : 'MAX'), h('span', { class: 'slot-kind' }, s.kindLabel)),
+      h('span', { class: 'slot-who' }, s.unassigned ? 'noch offen' : s.who, !s.unassigned && s.employment && h('em', {}, s.employment === 'rechnung' ? ' · Rechnung' : s.employment === 'minijob' ? ' · Minijob' : '')),
+      h('span', { class: 'slot-foot' }, h('span', {}, `${hrs(s.hours)} Std. · ${eur(s.costCents)}`),
+        s.actual ? h('span', { class: s.actual.missing ? 'ist miss' : 'ist ok' }, s.actual.missing ? 'kein Stempel' : `✓ ${hrs(s.actual.hours)} Std.`) : null));
+
+    const copyNext = run(async () => { const r = await api('POST', '/plan/copy', { from: w.week, to: addDays(w.week, 7) }); toast(r.copied ? `${r.copied} Einsätze in KW ${w.kw + 1 > 53 ? 1 : w.kw + 1} übernommen` : 'Nächste Woche ist schon geplant'); planWeek = addDays(w.week, 7); route('plan'); });
+    const copyText = run(async () => { try { await navigator.clipboard.writeText(w.whatsappText); toast('Wochenplan kopiert – in die WhatsApp-Gruppe einfügen'); } catch { const ta = h('textarea', { class: 'copy-fallback', readonly: true }, w.whatsappText); document.body.append(ta); ta.select(); toast('Text markiert – jetzt kopieren'); setTimeout(() => ta.remove(), 8000); } });
+    const sev = { bad: 'Dringend', warn: 'Bald', info: 'Hinweis' };
+
+    return h('div', { class: 'planner' },
+      h('div', { class: 'plan-head' },
+        h('div', {}, h('span', { class: 'eyebrow' }, `Wochenplan · ${dmy(w.week)} – ${dmy(w.to)}`), h('h1', { class: 'kw' }, `KW ${w.kw}`)),
+        h('div', { class: 'period-row' }, h('button', { type: 'button', class: 'nav-step', 'aria-label': 'Vorige Woche', onclick: go(-1) }, '‹'),
+          h('button', { type: 'button', class: 'ghost', onclick: () => { planWeek = todayStr(); route('plan'); } }, 'Heute'),
+          h('button', { type: 'button', class: 'nav-step', 'aria-label': 'Nächste Woche', onclick: go(1) }, '›'))),
+      h('div', { class: 'plan-actions' },
+        h('button', { class: 'btn', type: 'button', onclick: () => slotForm(null) }, '+ Einsatz'),
+        h('button', { class: 'btn secondary', type: 'button', onclick: copyText }, 'Als WhatsApp-Text kopieren'),
+        h('button', { class: 'btn secondary', type: 'button', onclick: copyNext }, 'Woche in die nächste übernehmen')),
+      h('div', { class: 'kpis plan-kpis' },
+        kpiTile('Einsätze', String(w.totals.slots), `${w.totals.workshops} Workshop${w.totals.workshops === 1 ? '' : 's'}`, 'none'),
+        kpiTile('Stunden geplant', hrs(w.totals.hours), 'auf Viertelstunde gerundet', 'none'),
+        kpiTile('Personalkosten geplant', eur(w.totals.costCents), 'inkl. Pauschalen', 'none'),
+        kpiTile('Offen / Konflikte', `${w.totals.open} / ${w.conflicts.filter((c) => c.level !== 'info').length}`, w.conflicts.length ? 'siehe unten' : 'alles sauber', w.conflicts.some((c) => c.level === 'bad') ? 'bad' : w.totals.open ? 'warn' : 'ok')),
+      w.conflicts.length > 0 && h('div', { class: 'card' }, h('ul', { class: 'list' }, w.conflicts.map((c) => h('li', { class: c.level }, h('span', { class: `sev ${c.level}` }, sev[c.level]), h('span', {}, c.text))))),
+      h('div', { class: 'legend-row small muted' }, h('span', { class: 'lg l-maxvorstadt' }, 'Maxvorstadt'), h('span', { class: 'lg l-pasing' }, 'Pasing'), h('span', { class: 'lg open' }, 'noch offen'), h('span', { class: 'lg conflict' }, 'Konflikt')),
+      h('div', { class: 'week' }, w.days.map((d) => h('section', { class: `day${d.today ? ' today' : ''}` },
+        h('header', { class: 'day-head' }, h('b', {}, d.label), h('span', {}, dmy(d.date).slice(0, 6)), d.today && h('em', {}, 'heute')),
+        h('div', { class: 'day-slots' }, d.slots.map(slotCard), h('button', { type: 'button', class: 'slot-add', 'aria-label': `Einsatz am ${d.long} einplanen`, onclick: () => slotForm(null, d.date) }, '+'))))),
+      h('h2', {}, 'Wer arbeitet wie viel'),
+      h('div', { class: 'card table-wrap' }, w.people.length ? h('table', {},
+        h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Art'), h('th', { class: 'num' }, 'Einsätze'), h('th', { class: 'num' }, 'Std.'), h('th', { class: 'num' }, 'Kosten'), h('th', {}, 'Minijob-Monat (Prognose)')),
+        w.people.map((p) => {
+          let mj = h('td', { class: 'muted small' }, p.guest ? 'Gast' : '–');
+          if (p.minijob) { const m = h('div', { class: `meter ${p.minijob.pct > 100 ? 'bad' : p.minijob.pct >= 90 ? 'warn' : ''}` }, h('span', {})); m.firstChild.style.width = `${Math.min(100, p.minijob.pct)}%`; mj = h('td', { class: 'meter-cell' }, m, h('span', { class: 'small muted' }, `${p.minijob.pct} % · ${eur(p.minijob.forecastCents)}`)); }
+          return h('tr', {}, h('td', {}, h('b', {}, p.who)), h('td', {}, h('span', { class: `emp ${p.employment}` }, p.employmentLabel)), h('td', { class: 'num' }, p.slots), h('td', { class: 'num' }, hrs(p.hours)), h('td', { class: 'num' }, eur(p.costCents)), mj);
+        })) : h('p', { class: 'muted' }, 'Diese Woche ist noch niemand eingeplant.')),
+      h('p', { class: 'small muted' }, 'Tipp: Auf einen Einsatz tippen zum Ändern oder Löschen. „✓" heißt, die Person hat wirklich gestempelt; „kein Stempel" erscheint bei vergangenen Einsätzen ohne Stempelzeit.'));
   }
 
   // ---------- Chef: Jahresuebersicht & Monatsvergleich ----------
@@ -677,7 +768,10 @@
 
   // ---------- Chef: Personal ----------
   async function viewPersonal() {
-    const [staff, shifts, d] = await Promise.all([api('GET', '/staff'), api('GET', `/shifts?${pq()}`), api('GET', `/dashboard?${pq()}`)]);
+    const invMonth = period.mode === 'monat' ? period.month : period.mode === 'jahr' ? `${period.year}-12` : period.to.slice(0, 7);
+    const [staff, shifts, d, invoices] = await Promise.all([api('GET', '/staff'), api('GET', `/shifts?${pq()}`), api('GET', `/dashboard?${pq()}`), api('GET', `/invoices?month=${invMonth}`)]);
+    const invBy = new Map(invoices.map((i) => [i.staffId, i]));
+    const employ = select(EMPLOY, 'minijob', { id: 'new-employment' });
     const by = new Map(d.personnel.byStaff.map((x) => [x.ref, x]));
     const limit = d.settings.minijobLimitCents;
     const ref = h('input', { required: true, placeholder: 'Kürzel, z. B. lena' });
@@ -690,18 +784,28 @@
       h('h2', {}, 'Team & Minijob-Grenze'),
       h('div', { class: 'card' }, staff.length ? staff.map((p) => {
         const x = by.get(p.ref) || { hours: 0, earnedCents: 0, minijobPct: 0 };
-        const m = h('div', { class: `meter ${x.minijobPct >= 100 ? 'bad' : x.minijobPct >= 85 ? 'warn' : ''}` }, h('span', {}));
-        m.firstChild.style.width = `${Math.min(100, x.minijobPct || 0)}%`;
+        const emp = p.employment || 'minijob';
+        let detail;
+        if (emp === 'minijob') {
+          const m = h('div', { class: `meter ${x.minijobPct >= 100 ? 'bad' : x.minijobPct >= 85 ? 'warn' : ''}` }, h('span', {}));
+          m.firstChild.style.width = `${Math.min(100, x.minijobPct || 0)}%`;
+          detail = [h('span', { class: 'small' }, `${x.hours.toLocaleString('de-DE')} Std. · ${eur(x.minijobEarnedCents ?? x.earnedCents)} von ${eur(limit)} · ${eur(p.hourlyRateCents)}/Std.`), m];
+        } else if (emp === 'rechnung') {
+          const inv = invBy.get(p.id) || { amountCents: 0, hours: 0, status: 'offen' };
+          const st = select({ offen: 'Rechnung offen', erhalten: 'Rechnung erhalten', bezahlt: 'Bezahlt' }, inv.status, { class: `inv-status s-${inv.status}`, onchange: run(async (e) => { await api('PUT', `/invoices/${p.id}/${invMonth}`, { status: e.target.value }); toast('Rechnungsstatus gespeichert'); route('personal'); }) });
+          detail = [h('div', { class: 'invoice' }, h('span', { class: 'small' }, `Rechnung ${invMonth.split('-').reverse().join('/')}: `, h('b', {}, eur(inv.amountCents)), ` · ${inv.hours.toLocaleString('de-DE')} Std. à ${eur(p.hourlyRateCents)}`), st)];
+        } else detail = [h('span', { class: 'small' }, `${x.hours.toLocaleString('de-DE')} Std. · ${eur(x.earnedCents)} · ${eur(p.hourlyRateCents)}/Std.`)];
         return h('div', { class: 'staffrow' },
-          h('div', { class: 'row spread' }, h('b', {}, p.ref, p.active ? '' : ' (inaktiv)'), h('span', { class: 'small' }, `${x.hours.toLocaleString('de-DE')} Std. · ${eur(x.earnedCents)} von ${eur(limit)} · ${eur(p.hourlyRateCents)}/Std.`)), m,
+          h('div', { class: 'row spread' }, h('span', { class: 'row' }, h('b', {}, p.ref, p.active ? '' : ' (inaktiv)'), h('span', { class: `emp ${emp}` }, EMPLOY[emp])), detail[0]), ...detail.slice(1),
           h('div', { class: 'row small' },
+            h('button', { type: 'button', class: 'link', onclick: run(async () => { const order = ['minijob', 'rechnung', 'angestellt']; const next = order[(order.indexOf(emp) + 1) % 3]; await api('PATCH', `/staff/${p.id}`, { employment: next }); toast(`${p.ref}: ${EMPLOY[next]}`); route('personal'); }) }, `Art ändern (→ ${EMPLOY[['minijob', 'rechnung', 'angestellt'][(['minijob', 'rechnung', 'angestellt'].indexOf(emp) + 1) % 3]]})`),
             h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = await ask(`Neuer Stundenlohn für ${p.ref} in €`, { value: fromCents(p.hourlyRateCents), inputmode: 'decimal' }); if (v == null) return; const c = toCents(v); if (c == null) throw new Error('Betrag prüfen'); await api('PATCH', `/staff/${p.id}`, { hourlyRateCents: c }); route('personal'); }) }, 'Lohn ändern'),
             h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = await ask(`Neue PIN für ${p.ref} (6–8 Ziffern)`, { value: '', inputmode: 'numeric' }); if (!v) return; await api('PATCH', `/staff/${p.id}`, { pin: v.trim() }); toast('PIN geändert'); }) }, 'PIN ändern'),
             h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/staff/${p.id}`, { active: !p.active }); route('personal'); }) }, p.active ? 'Deaktivieren' : 'Aktivieren')));
       }) : h('p', { class: 'muted' }, 'Noch niemand angelegt.')),
       h('details', { class: 'card' }, h('summary', {}, '+ Person anlegen'),
-        h('form', { onsubmit: run(async () => { const c = toCents(rate.value); if (c == null) throw new Error('Stundenlohn prüfen'); await api('POST', '/staff', { ref: ref.value.trim(), pin: pin.value.trim(), hourlyRateCents: c }); toast('Angelegt – Kürzel und PIN weitergeben'); route('personal'); }) },
-          h('div', { class: 'grid3' }, field('Kürzel', ref), field('PIN', pin), field('Stundenlohn €', rate)),
+        h('form', { onsubmit: run(async () => { const c = toCents(rate.value); if (c == null) throw new Error('Stundenlohn prüfen'); await api('POST', '/staff', { ref: ref.value.trim(), pin: pin.value.trim(), hourlyRateCents: c, employment: employ.value }); toast('Angelegt – Kürzel und PIN weitergeben'); route('personal'); }) },
+          h('div', { class: 'grid3' }, field('Kürzel', ref), field('PIN', pin), field('Stundenlohn €', rate)), field('Beschäftigung', employ),
           h('p', { class: 'muted small' }, 'Nur Kürzel oder Vorname, keine vollen Namen. Die PIN gibst du der Person persönlich.'),
           h('button', { class: 'btn', type: 'submit' }, 'Anlegen'))),
       d.personnel.helpers.length > 0 && h('div', {}, h('h2', {}, 'Aushilfen'),

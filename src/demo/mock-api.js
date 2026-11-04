@@ -7,10 +7,12 @@
 (() => {
   const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = window.__cockpit.dashboard;
   const { computeSettlement, buildHelpers, helperShift } = window.__cockpit.bar;
-  const KEY = 'cockpit.demo.db.v5';
+  const { computeWeek, computeInvoices, mondayOf, addDays } = window.__cockpit.plan;
+  const KEY = 'cockpit.demo.db.v6';
   const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
   let db;
   try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
+  db.plan = db.plan || {}; db.invoices = db.invoices || {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { /* privat */ } };
   window.__cockpit.resetDemo = () => { db = fresh(); save(); try { localStorage.removeItem('cockpit.auth'); } catch { /* */ } location.reload(); };
 
@@ -129,10 +131,10 @@
     const qf = query.get('from'), qt = query.get('to');
     const range = /^\d{4}-\d{2}-\d{2}$/.test(qf || '') && /^\d{4}-\d{2}-\d{2}$/.test(qt || '') && qf <= qt ? { from: qf, to: qt } : month ? rangeOf({ month }) : null;
     const inR = (d) => !range || (d >= range.from && d <= range.to);
-    const data = () => ({ courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main });
+    const data = () => ({ invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main });
     if (method === 'GET' && path === '/year') return json(200, computeYear({ year: Number(query.get('year')) || Number(today().slice(0, 4)), ...data() }));
     if (method === 'GET' && path === '/dashboard') {
-      return json(200, computeDashboard({ ...(range || rangeOf({ month: today().slice(0, 7) })), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main }));
+      return json(200, computeDashboard({ ...(range || rangeOf({ month: today().slice(0, 7) })), invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main }));
     }
     if (method === 'GET' && path === '/bar/sessions') return json(200, list('barsessions').filter((b) => inR(b.date)).map(settle).sort((a, b) => b.date.localeCompare(a.date)));
     if (method === 'GET' && path === '/staff') return json(200, list('staff').map(publicStaff).sort((a, b) => a.ref.localeCompare(b.ref)));
@@ -140,7 +142,7 @@
       const id = String(body.ref).toLowerCase();
       if (!/^[a-z0-9_.-]{2,30}$/.test(id)) return err(400, 'validation_failed', 'Kürzel: 2–30 Zeichen, nur Buchstaben/Zahlen');
       if (db.staff[id]) return err(409, 'already_exists');
-      db.staff[id] = { id, ref: body.ref, hourlyRateCents: body.hourlyRateCents, active: true }; save(); return json(201, db.staff[id]);
+      db.staff[id] = { id, ref: body.ref, hourlyRateCents: body.hourlyRateCents, employment: body.employment || 'minijob', active: true }; save(); return json(201, db.staff[id]);
     }
     if (method === 'PATCH' && (m = path.match(/^\/staff\/([^/]+)$/))) {
       const p = db.staff[m[1]]; if (!p) return err(404, 'not_found');
@@ -157,6 +159,29 @@
     }
     if (method === 'PATCH' && (m = path.match(/^\/shifts\/([^/]+)$/))) { const sh = db.shifts[m[1]]; if (!sh) return err(404, 'not_found'); sh.paid = !!body.paid; save(); return json(200, sh); }
     if (method === 'DELETE' && (m = path.match(/^\/shifts\/([^/]+)$/))) { if (!db.shifts[m[1]]) return err(404, 'not_found'); delete db.shifts[m[1]]; save(); return json(204); }
+    // Wochenplan
+    if (method === 'GET' && path === '/plan') return json(200, computeWeek({ week: /^\d{4}-\d{2}-\d{2}$/.test(query.get('week') || '') ? query.get('week') : today(), plan: list('plan'), staff: list('staff'), shifts: list('shifts'), settings: mergeSettings(db.settings.main) }));
+    if (method === 'POST' && path === '/plan/copy') {
+      const src = mondayOf(body.from), dst = mondayOf(body.to);
+      const shiftD = Math.round((Date.parse(dst) - Date.parse(src)) / 86_400_000);
+      const key = (s) => `${s.date}_${s.start}_${s.location}_${s.kind}_${s.staffRef || s.guestName || ''}`;
+      const existing = new Set(list('plan').filter((s) => s.date >= dst && s.date <= addDays(dst, 6)).map(key));
+      let n = 0;
+      for (const s of list('plan').filter((x) => x.date >= src && x.date <= addDays(src, 6))) { const c = { ...s, id: uid(), date: addDays(s.date, shiftD) }; if (existing.has(key(c))) continue; db.plan[c.id] = c; n++; }
+      save(); return json(200, { copied: n });
+    }
+    if (method === 'POST' && path === '/plan') {
+      if (body.staffRef && !db.staff[String(body.staffRef).toLowerCase()]) return err(400, 'validation_failed', 'Person nicht gefunden');
+      if (!/^\d{2}:\d{2}$/.test(body.start || '') || !/^\d{2}:\d{2}$/.test(body.end || '')) return err(400, 'validation_failed', 'Uhrzeit HH:MM');
+      const slot = { id: uid(), ...body }; db.plan[slot.id] = slot; save(); return json(201, slot);
+    }
+    if ((m = path.match(/^\/plan\/([^/]+)$/))) {
+      const cur = db.plan[m[1]]; if (!cur) return err(404, 'not_found');
+      if (method === 'DELETE') { delete db.plan[m[1]]; save(); return json(204); }
+      if (method === 'PATCH') { Object.assign(cur, body); save(); return json(200, cur); }
+    }
+    if (method === 'GET' && path === '/invoices') return json(200, computeInvoices({ month: query.get('month') || today().slice(0, 7), staff: list('staff'), shifts: list('shifts'), invoices: list('invoices') }));
+    if (method === 'PUT' && (m = path.match(/^\/invoices\/([^/]+)\/(\d{4}-\d{2})$/))) { const doc = { id: `${m[1]}_${m[2]}`, staffId: m[1], month: m[2], status: body.status }; db.invoices[doc.id] = doc; save(); return json(200, doc); }
     if (method === 'GET' && path === '/settings') return json(200, mergeSettings(db.settings.main));
     if (method === 'PUT' && path === '/settings') { db.settings.main = { id: 'main', ...body }; save(); return json(200, mergeSettings(body)); }
     if (method === 'POST' && path === '/products') {

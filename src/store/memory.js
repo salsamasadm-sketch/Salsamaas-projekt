@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const DOC_COLLECTIONS = ['staff', 'shifts', 'settings', 'products', 'barsessions', 'sales'];
+const DOC_COLLECTIONS = ['staff', 'shifts', 'settings', 'products', 'barsessions', 'sales', 'plan', 'invoices'];
 
 /**
  * Einfacher Speicher (JSON-Datei, atomar geschrieben) fuer Entwicklung/Tests.

@@ -231,3 +231,41 @@ test('Kombi-Kasse (Tuer + Theke): eine Person kassiert Eintritt und Getraenke', 
   assert.deepEqual([r.station, r.guests, r.ticketRevenueCents, r.drinksRevenueCents, r.cashDiffCents, r.missingUnits], ['kombi', 2, 1600, 350, 0, 0]);
   s.close();
 });
+
+test('Wochenplan: Kosten, Konflikte, Minijob-Prognose, Kopieren, WhatsApp-Text; Rechnungstrainer', async () => {
+  const s = await start();
+  const { chef, lena } = await setup(s);
+  await s.call('POST', '/app/api/staff', { token: chef, body: { ref: 'diego', pin: '771122', hourlyRateCents: 3000, employment: 'rechnung' } });
+  const mon = '2030-03-04'; // Montag
+  const add = (b) => s.call('POST', '/app/api/plan', { token: chef, body: b });
+  assert.equal((await add({ date: mon, start: '19:00', end: '20:30', location: 'maxvorstadt', kind: 'kurs', title: 'Salsa Beginner 1', staffRef: 'diego' })).status, 201);
+  await add({ date: '2030-03-09', start: '20:00', end: '23:59', location: 'maxvorstadt', kind: 'bar', staffRef: 'lena' });
+  await add({ date: '2030-03-09', start: '22:00', end: '23:00', location: 'pasing', kind: 'empfang', staffRef: 'lena' }); // Ueberschneidung
+  await add({ date: '2030-03-09', start: '16:00', end: '19:00', location: 'maxvorstadt', kind: 'workshop', title: 'Bachata Workshop', guestName: 'Luis', feeCents: 25000 });
+  await add({ date: '2030-03-08', start: '20:00', end: '23:00', location: 'pasing', kind: 'empfang' }); // offen
+  assert.equal((await add({ date: mon, start: '19:00', end: '20:00', location: 'pasing', kind: 'kurs', staffRef: 'niemand' })).status, 400);
+  const w = (await s.call('GET', '/app/api/plan?week=2030-03-06', { token: chef })).body;
+  assert.equal(w.week, mon);
+  assert.equal(w.kw, 10);
+  assert.equal(w.totals.slots, 5);
+  assert.equal(w.totals.workshops, 1);
+  assert.equal(w.totals.open, 1);
+  assert.equal(w.slots.find((x) => x.title === 'Salsa Beginner 1').costCents, 4500); // 1,5 Std. x 30 €
+  assert.equal(w.slots.find((x) => x.guestName === 'Luis').costCents, 25000);    // Pauschale
+  assert.ok(w.conflicts.some((c) => /lena ist Samstag doppelt verplant/.test(c.text)));
+  assert.ok(w.conflicts.some((c) => /hat noch niemanden/.test(c.text)));
+  assert.match(w.whatsappText, /KW 10/);
+  assert.match(w.whatsappText, /Bachata Workshop/);
+  assert.equal(w.people.find((p) => p.who === 'diego').employment, 'rechnung');
+  assert.ok(w.people.find((p) => p.who === 'lena').minijob);
+  assert.equal((await s.call('GET', '/app/api/plan?week=2030-03-06', { token: lena })).status, 403);
+  // Kopieren in die Folgewoche, doppeltes Kopieren legt nichts doppelt an
+  assert.equal((await s.call('POST', '/app/api/plan/copy', { token: chef, body: { from: mon, to: '2030-03-11' } })).body.copied, 5);
+  assert.equal((await s.call('POST', '/app/api/plan/copy', { token: chef, body: { from: mon, to: '2030-03-11' } })).body.copied, 0);
+  // Rechnungsstatus
+  const inv = (await s.call('GET', '/app/api/invoices?month=2030-03', { token: chef })).body;
+  assert.deepEqual(inv.map((i) => [i.ref, i.status]), [['diego', 'offen']]);
+  await s.call('PUT', '/app/api/invoices/diego/2030-03', { token: chef, body: { status: 'bezahlt' } });
+  assert.equal((await s.call('GET', '/app/api/invoices?month=2030-03', { token: chef })).body[0].status, 'bezahlt');
+  s.close();
+});
