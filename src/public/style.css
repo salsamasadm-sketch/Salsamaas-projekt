@@ -404,3 +404,10 @@ th.sortable[data-dir="desc"]::after { content: " ↓"; opacity: 1; color: var(--
 .helper-row { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--r); padding: 12px 12px 8px; }
 .helper-out { font: 600 15px/1 var(--f-mono); }
 .helper-sum { margin: 0; }
+
+/* Team: feste Kasse */
+.station-lock { display: grid; gap: 4px; padding: 14px 16px; margin-bottom: 14px; border-radius: var(--r); background: var(--sheet); border: 1px solid var(--rule); border-left: 0; box-shadow: inset 4px 0 0 var(--accent); }
+.station-lock b { font: 800 22px/1.1 var(--f-display); font-stretch: 75%; text-transform: uppercase; letter-spacing: .01em; }
+.empty-state { display: grid; gap: 12px; justify-items: start; }
+.empty-state h1 { margin: 0; }
+.empty-state p { margin: 0; max-width: 52ch; }

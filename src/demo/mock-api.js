@@ -7,7 +7,7 @@
 (() => {
   const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = window.__cockpit.dashboard;
   const { computeSettlement, buildHelpers, helperShift } = window.__cockpit.bar;
-  const KEY = 'cockpit.demo.db.v3';
+  const KEY = 'cockpit.demo.db.v4';
   const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
   let db;
   try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
@@ -42,6 +42,11 @@
     if (!owner && (!staff || staff.active === false)) return err(401, 'unauthorized');
     const by = owner ? 'chef' : staff.ref;
     const only = () => (owner ? null : err(403, 'forbidden'));
+    // Team an Kassenplatz/Standort der laufenden Schicht gebunden
+    const scope = () => { if (owner) return { owner: true }; const sh = list('shifts').find((x) => x.staffRef === staff.ref && !x.end && !x.helper); return sh ? { location: sh.location, station: sh.kind === 'empfang' ? 'tuer' : 'theke' } : null; };
+    const stOf = (b) => (b.station === 'tuer' ? 'tuer' : 'theke');
+    const inScope = (sc, b) => sc.owner || (b.location === sc.location && stOf(b) === sc.station);
+    if (path.startsWith('/bar/') && !path.startsWith('/bar/sessions') && !scope()) return err(403, 'no_shift');
     let m;
 
     if (method === 'GET' && path === '/me') {
@@ -74,20 +79,24 @@
     }
     if (method === 'GET' && path === '/products') return json(200, list('products').filter((p) => owner || p.active !== false).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)));
     if (method === 'GET' && path === '/bar/current') {
-      const station = query.get('station') === 'tuer' ? 'tuer' : 'theke';
-      const ss = list('barsessions').filter((b) => b.location === query.get('location') && (b.station === 'tuer' ? 'tuer' : 'theke') === station);
+      const sc = scope();
+      const station = sc.owner ? (query.get('station') === 'tuer' ? 'tuer' : 'theke') : sc.station;
+      const location = sc.owner ? query.get('location') : sc.location;
+      const ss = list('barsessions').filter((b) => b.location === location && stOf(b) === station);
       const open = ss.find((b) => !b.closedAt) || null;
       const last = ss.filter((b) => b.closedAt).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0];
-      return json(200, { station, session: open, settlement: open ? settle(open) : null, lastStock: last?.stockEnd || {} });
+      return json(200, { location, station, locked: !sc.owner, session: open, settlement: open ? settle(open) : null, lastStock: last?.stockEnd || {} });
     }
     if (method === 'POST' && path === '/bar/open') {
       const station = body.station === 'tuer' ? 'tuer' : 'theke';
+      const sc = scope(); if (!sc.owner && (body.location !== sc.location || station !== sc.station)) return err(403, 'wrong_station');
       if (list('barsessions').some((b) => b.location === body.location && (b.station === 'tuer' ? 'tuer' : 'theke') === station && !b.closedAt)) return err(409, 'session_open');
       const ses = { id: uid(), date: today(), stockStart: {}, ...body, station, openedBy: by, openedAt: new Date().toISOString(), closedAt: null };
       db.barsessions[ses.id] = ses; save(); return json(201, ses);
     }
     if ((m = path.match(/^\/bar\/([^/]+)\/sales$/))) {
       const ses = db.barsessions[m[1]]; if (!ses) return err(404, 'not_found');
+      if (!inScope(scope(), ses)) return err(403, 'wrong_station');
       if (method === 'GET') return json(200, list('sales').filter((x) => x.sessionId === ses.id).sort((a, b) => b.at.localeCompare(a.at)));
       if (ses.closedAt) return err(409, 'session_closed');
       const isTicket = (pid) => ['eintritt', 'workshop'].includes(db.products[pid]?.category);
@@ -98,11 +107,13 @@
     }
     if (method === 'DELETE' && (m = path.match(/^\/bar\/([^/]+)\/sales\/([^/]+)$/))) {
       const sale = db.sales[m[2]]; if (!sale || sale.voided) return err(404, 'not_found');
+      if (!inScope(scope(), db.barsessions[sale.sessionId] || {})) return err(403, 'wrong_station');
       Object.assign(sale, { voided: true, voidedBy: by, voidedAt: new Date().toISOString() }); save(); return json(204);
     }
     if (method === 'POST' && (m = path.match(/^\/bar\/([^/]+)\/close$/))) {
       const ses = db.barsessions[m[1]]; if (!ses) return err(404, 'not_found');
       if (ses.closedAt) return err(409, 'session_closed');
+      if (!inScope(scope(), ses)) return err(403, 'wrong_station');
       const { helpers: hIn = [], ...rest } = body;
       const helpers = buildHelpers(ses, hIn, uid);
       Object.assign(ses, { cashOutCents: 0, restock: {}, stockEnd: {}, ...rest, helpers, closedBy: by, closedAt: new Date().toISOString() }); save();

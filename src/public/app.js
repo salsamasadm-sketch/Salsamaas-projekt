@@ -57,7 +57,7 @@
       (field || box.querySelector('button')).focus();
     });
   }
-  const ERR = { unauthorized: 'Anmeldung fehlgeschlagen', too_many_requests: 'Zu viele Versuche – bitte 15 Min. warten', shift_running: 'Es läuft schon eine Schicht', no_shift_running: 'Keine Schicht aktiv', session_open: 'An diesem Standort ist schon eine Kasse offen', session_closed: 'Kasse ist schon geschlossen', overlap: 'Überschneidet sich mit einer anderen Schicht', already_exists: 'Kürzel gibt es schon', forbidden: 'Keine Berechtigung' };
+  const ERR = { no_shift: 'Bitte zuerst deine Schicht starten', wrong_station: 'Das ist nicht deine Kasse (anderer Kassenplatz oder Standort)', unauthorized: 'Anmeldung fehlgeschlagen', too_many_requests: 'Zu viele Versuche – bitte 15 Min. warten', shift_running: 'Es läuft schon eine Schicht', no_shift_running: 'Keine Schicht aktiv', session_open: 'An diesem Standort ist schon eine Kasse offen', session_closed: 'Kasse ist schon geschlossen', overlap: 'Überschneidet sich mit einer anderen Schicht', already_exists: 'Kürzel gibt es schon', forbidden: 'Keine Berechtigung' };
 
   // ---------- API ----------
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* privat */ } } };
@@ -179,7 +179,7 @@
       card.append(
         h('div', { class: 'row spread' }, h('span', { class: 'pill ok' }, 'Schicht läuft'), h('span', { class: 'muted small' }, `${KIND[me.openShift.kind]} · ${LOC[me.openShift.location]} · seit ${time(me.openShift.start)}`)),
         t,
-        h('button', { class: 'btn big block stop', type: 'button', onclick: run(async () => { await api('POST', '/shifts/stop'); toast('Schicht beendet'); route('zeit'); }) }, '■  Schicht beenden'),
+        h('button', { class: 'btn big block stop', type: 'button', onclick: run(async () => { const k = await api('GET', `/bar/current?location=${loc}&station=${station}`).catch(() => null); if (k?.session && !await ask(`Deine ${STATION_KASSE[k.station]} ist noch offen. Nach dem Ausstempeln kannst du sie nicht mehr abschließen – trotzdem beenden?`)) return; await api('POST', '/shifts/stop'); toast('Schicht beendet'); route('zeit'); }) }, '■  Schicht beenden'),
       );
     } else {
       const kind = select(KIND, store.get('cockpit.kind') || 'bar');
@@ -214,17 +214,21 @@
   let stationChosen = false;
   const setStation = (st) => { station = st; stationChosen = true; store.set('cockpit.station', st); };
   async function viewKasse() {
-    // Team: Kassenplatz automatisch aus der laufenden Schicht (Empfang/Tuer -> Tuer, Bar/Theke -> Theke)
-    if (auth.role === 'staff' && !stationChosen) {
-      const me = await api('GET', '/me');
-      if (me.openShift?.kind === 'empfang') station = 'tuer';
-      else if (me.openShift?.kind === 'bar') station = 'theke';
-      if (me.openShift) setLoc(me.openShift.location);
+    // Team: fest an Kassenplatz und Standort der laufenden Schicht gebunden (kein Umschalten)
+    let cur;
+    try { cur = await api('GET', `/bar/current?location=${loc}&station=${station}`); } catch (e) {
+      if (!/Schicht/.test(e.message)) throw e;
+      return h('div', { class: 'card empty-state' }, h('h1', {}, 'Erst einstempeln'),
+        h('p', {}, 'Die Kasse ist an deine Schicht gebunden: Wer als „Empfang / Tür" eingestempelt ist, kassiert an der Tür, wer als „Bar / Theke" eingestempelt ist, an der Theke.'),
+        h('button', { class: 'btn', type: 'button', onclick: () => route('zeit') }, 'Zur Schicht'));
     }
-    const [cur, all] = await Promise.all([api('GET', `/bar/current?location=${loc}&station=${station}`), api('GET', '/products')]);
+    if (cur.locked) { station = cur.station; if (cur.location !== loc) setLoc(cur.location); else applyLoc(loc); }
+    const all = await api('GET', '/products');
     const products = all.filter((p) => allowedAt(station, p.category));
-    const root = h('div', {}, seg(LOC, loc, (l) => { setLoc(l); route('kasse'); }),
-      h('div', { class: 'seg station' }, Object.entries(STATION).map(([k, l]) => h('button', { type: 'button', class: k === station ? 'active' : '', onclick: () => { setStation(k); route('kasse'); } }, l))));
+    const root = cur.locked
+      ? h('div', {}, h('div', { class: 'station-lock' }, h('span', { class: 'eyebrow' }, 'Deine Kasse'), h('b', {}, `${STATION[station]} · ${LOC[loc]}`), h('span', { class: 'muted small' }, 'aus deiner Schicht')))
+      : h('div', {}, seg(LOC, loc, (l) => { setLoc(l); route('kasse'); }),
+        h('div', { class: 'seg station' }, Object.entries(STATION).map(([k, l]) => h('button', { type: 'button', class: k === station ? 'active' : '', onclick: () => { setStation(k); route('kasse'); } }, l))));
     if (!products.length) return root.append(h('div', { class: 'card' }, h('p', {}, auth.role === 'owner' ? `Lege zuerst unter „Getränke" Artikel für ${STATION_SHORT[station] === 'Tür' ? 'Eintritt/Workshops' : 'die Theke'} an.` : 'Für diesen Kassenplatz sind noch keine Artikel angelegt – bitte Pablo Bescheid geben.'))), root;
     if (!cur.session) root.append(openForm(station === 'tuer' ? [] : products.filter((p) => !TICKET.includes(p.category)), cur.lastStock));
     else root.append(await posView(cur, products));

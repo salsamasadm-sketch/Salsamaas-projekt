@@ -174,6 +174,18 @@ function createTeamRouter({ store, keys, sessions, logger }) {
 
   // --- Bar-Kasse ---
   const by = (req) => (req.session.role === 'staff' ? req.staff.ref : 'chef');
+  /**
+   * Team ist an den Kassenplatz und Standort seiner laufenden Schicht gebunden
+   * (Empfang/Tuer -> Tuer-Kasse, sonst Theke). Ohne Schicht keine Kasse. Chef ist frei.
+   * Liefert { location, station } oder schickt selbst die Fehlermeldung (dann null).
+   */
+  const kasseScope = async (req, res) => {
+    if (req.session.role === 'owner') return { owner: true };
+    const shift = (await store.listDocs('shifts')).find((x) => x.staffRef === req.staff.ref && !x.end && !x.helper);
+    if (!shift) { res.status(403).json({ error: 'no_shift' }); return null; }
+    return { location: shift.location, station: shift.kind === 'empfang' ? 'tuer' : 'theke' };
+  };
+  const inScope = (scope, ses) => scope.owner || (ses.location === scope.location && stationOf(ses) === scope.station);
   const activeSales = async (sessionId) => (await store.listDocs('sales')).filter((x) => x.sessionId === sessionId && !x.voided);
   const settlement = async (session) => {
     const [sales, products] = await Promise.all([activeSales(session.id), store.listDocs('products')]);
@@ -192,18 +204,21 @@ function createTeamRouter({ store, keys, sessions, logger }) {
 
   // Offene Kasse am Standort + letzter gezaehlter Bestand (zum Vorausfuellen beim Oeffnen)
   r.get('/bar/current', wrap(async (req, res) => {
-    const location = S.LOCATIONS.includes(req.query.location) ? req.query.location : null;
+    const scope = await kasseScope(req, res); if (!scope) return;
+    const location = scope.owner ? (S.LOCATIONS.includes(req.query.location) ? req.query.location : null) : scope.location;
     if (!location) return res.status(400).json({ error: 'invalid_location' });
-    const station = STATIONS.includes(req.query.station) ? req.query.station : 'theke';
+    const station = scope.owner ? (STATIONS.includes(req.query.station) ? req.query.station : 'theke') : scope.station;
     // Eine Kasse pro Standort und Kassenplatz (Tuer und Theke haben getrennte Kassenladen)
     const sessions = (await store.listDocs('barsessions')).filter((b) => b.location === location && stationOf(b) === station);
     const open = sessions.find((b) => !b.closedAt) || null;
     const last = sessions.filter((b) => b.closedAt).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0];
-    res.json({ station, session: open && { id: open.id, date: open.date, location: open.location, station, openedBy: open.openedBy, openedAt: open.openedAt }, settlement: open ? await settlement(open) : null, lastStock: last?.stockEnd || {}, lastSessionId: last?.id || null });
+    res.json({ location, station, locked: !scope.owner, session: open && { id: open.id, date: open.date, location: open.location, station, openedBy: open.openedBy, openedAt: open.openedAt }, settlement: open ? await settlement(open) : null, lastStock: last?.stockEnd || {}, lastSessionId: last?.id || null });
   }));
 
   r.post('/bar/open', wrap(async (req, res) => {
     const d = parse(sessionOpen, req.body, res); if (!d) return;
+    const scope = await kasseScope(req, res); if (!scope) return;
+    if (!scope.owner && (d.location !== scope.location || d.station !== scope.station)) return res.status(403).json({ error: 'wrong_station' });
     if (d.station === 'tuer') d.stockStart = {};
     const open = (await store.listDocs('barsessions')).find((b) => b.location === d.location && stationOf(b) === d.station && !b.closedAt);
     if (open) return res.status(409).json({ error: 'session_open', sessionId: open.id });
@@ -217,6 +232,8 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const ses = await loadOpen(req.params.id);
     if (!ses) return res.status(404).json({ error: 'not_found' });
     if (ses.closedAt) return res.status(409).json({ error: 'session_closed' });
+    const scope = await kasseScope(req, res); if (!scope) return;
+    if (!inScope(scope, ses)) return res.status(403).json({ error: 'wrong_station' });
     // Preise kommen immer vom Server, nie vom Handy.
     const products = new Map((await store.listDocs('products')).map((p) => [p.id, p]));
     const items = [];
@@ -236,6 +253,8 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const ses = await loadOpen(req.params.id);
     if (!ses || !S.id.safeParse(req.params.saleId).success) return res.status(404).json({ error: 'not_found' });
     if (ses.closedAt && req.session.role !== 'owner') return res.status(409).json({ error: 'session_closed' });
+    const scope = await kasseScope(req, res); if (!scope) return;
+    if (!inScope(scope, ses)) return res.status(403).json({ error: 'wrong_station' });
     const sale = await store.getDoc('sales', req.params.saleId);
     if (!sale || sale.sessionId !== ses.id || sale.voided) return res.status(404).json({ error: 'not_found' });
     await store.putDoc('sales', { ...sale, voided: true, voidedBy: by(req), voidedAt: new Date().toISOString() }); log(req, 'sale_voided');
@@ -245,6 +264,8 @@ function createTeamRouter({ store, keys, sessions, logger }) {
   r.get('/bar/:id/sales', wrap(async (req, res) => {
     const ses = await loadOpen(req.params.id);
     if (!ses) return res.status(404).json({ error: 'not_found' });
+    const scope = await kasseScope(req, res); if (!scope) return;
+    if (!inScope(scope, ses)) return res.status(403).json({ error: 'wrong_station' });
     const list = (await store.listDocs('sales')).filter((x) => x.sessionId === ses.id).sort((a, b) => b.at.localeCompare(a.at));
     res.json(req.session.role === 'owner' ? list : list.slice(0, 15));
   }));
@@ -254,6 +275,8 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const ses = await loadOpen(req.params.id);
     if (!ses) return res.status(404).json({ error: 'not_found' });
     if (ses.closedAt) return res.status(409).json({ error: 'session_closed' });
+    const scope = await kasseScope(req, res); if (!scope) return;
+    if (!inScope(scope, ses)) return res.status(403).json({ error: 'wrong_station' });
     const { helpers: helperInput, ...rest } = d;
     const helpers = buildHelpers(ses, helperInput, () => crypto.randomUUID());
     const next = { ...ses, ...rest, helpers, closedBy: by(req), closedAt: new Date().toISOString() };

@@ -56,6 +56,13 @@ test('PIN-Sperre nach 5 Fehlversuchen pro Kuerzel', async () => {
 test('Kasse: oeffnen, verkaufen, stornieren, schliessen, Abrechnung mit Kassen- und Inventardifferenz', async () => {
   const s = await start();
   const { chef, lena, cola, mojito, entry, wsIncl } = await setup(s);
+  // Ohne Schicht keine Kasse; mit Bar-Schicht nur die Theke am eigenen Standort
+  assert.equal((await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', cashStartCents: 0 } })).body.error, 'no_shift');
+  await s.call('POST', '/app/api/shifts/start', { token: lena, body: { kind: 'bar', location: 'pasing' } });
+  assert.equal((await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', station: 'tuer', cashStartCents: 0 } })).body.error, 'wrong_station');
+  assert.equal((await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'maxvorstadt', cashStartCents: 0 } })).body.error, 'wrong_station');
+  const cur = (await s.call('GET', '/app/api/bar/current?location=maxvorstadt&station=tuer', { token: lena })).body;
+  assert.deepEqual([cur.location, cur.station, cur.locked], ['pasing', 'theke', true]);
   const open = await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', cashStartCents: 10000, stockStart: { [cola.id]: 20, [mojito.id]: 10 } } });
   assert.equal(open.status, 201);
   const id = open.body.id;
@@ -63,12 +70,14 @@ test('Kasse: oeffnen, verkaufen, stornieren, schliessen, Abrechnung mit Kassen- 
 
   // Eintritt geht nur an der Tuer-Kasse
   assert.equal((await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: entry.id, qty: 1 }] } })).body.error, 'wrong_station');
-  const door = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', station: 'tuer', cashStartCents: 5000 } })).body;
+  const door = (await s.call('POST', '/app/api/bar/open', { token: chef, body: { location: 'pasing', station: 'tuer', cashStartCents: 5000 } })).body;
+  // Lena (Theke) darf an der Tuer-Kasse nichts buchen
+  assert.equal((await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: entry.id, qty: 1 }] } })).body.error, 'wrong_station');
   assert.equal(door.station, 'tuer');
-  assert.equal((await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 1 }] } })).body.error, 'wrong_station');
-  await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: entry.id, qty: 2 }] } });
-  await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: lena, body: { payment: 'karte', items: [{ productId: wsIncl.id, qty: 1 }] } });
-  const doorClose = (await s.call('POST', `/app/api/bar/${door.id}/close`, { token: lena, body: { cashEndCents: 6600 } })).body;
+  assert.equal((await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: chef, body: { payment: 'bar', items: [{ productId: cola.id, qty: 1 }] } })).body.error, 'wrong_station');
+  await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: chef, body: { payment: 'bar', items: [{ productId: entry.id, qty: 2 }] } });
+  await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: chef, body: { payment: 'karte', items: [{ productId: wsIncl.id, qty: 1 }] } });
+  const doorClose = (await s.call('POST', `/app/api/bar/${door.id}/close`, { token: chef, body: { cashEndCents: 6600 } })).body;
   assert.deepEqual([doorClose.guests, doorClose.ticketRevenueCents, doorClose.cashDiffCents, doorClose.items.length], [3, 1600, 0, 0]);
   await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 2 }] } });
   await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'karte', items: [{ productId: mojito.id, qty: 1 }] } });
@@ -185,6 +194,7 @@ test('Zeitraum, Vorperiode, Jahr und Kursgebuehr vor Ort', async () => {
 test('Aushilfen beim Kassenabschluss: Viertelstunde aufrunden, bar mindert Kassensoll, Ueberweisung als To-do', async () => {
   const s = await start();
   const { chef, lena, cola } = await setup(s);
+  await s.call('POST', '/app/api/shifts/start', { token: lena, body: { kind: 'bar', location: 'pasing' } });
   const ses = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', cashStartCents: 10000, stockStart: { [cola.id]: 5 } } })).body;
   await s.call('POST', `/app/api/bar/${ses.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 2 }] } });
   const t0 = new Date(Date.now() - 5 * 3_600_000);
