@@ -269,3 +269,26 @@ test('Wochenplan: Kosten, Konflikte, Minijob-Prognose, Kopieren, WhatsApp-Text; 
   assert.equal((await s.call('GET', '/app/api/invoices?month=2030-03', { token: chef })).body[0].status, 'bezahlt');
   s.close();
 });
+
+test('Getraenkekarte, Einkaufspreise, Wareneinsatz und Einkaeufe', async () => {
+  const s = await start();
+  const { chef } = await setup(s);
+  const imp = (await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body;
+  assert.equal(imp.created, 14);
+  assert.equal((await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body.created, 0); // keine Doppelungen
+  const products = (await s.call('GET', '/app/api/products', { token: chef })).body;
+  const helles = products.find((p) => p.name === 'Helles');
+  assert.deepEqual([helles.priceCents, helles.costCents], [450, 71]);
+  // 10 Helles verkauft, 1 fehlt laut Inventar: Wareneinsatz = 11 x 0,71
+  const ses = (await s.call('POST', '/app/api/bar/open', { token: chef, body: { location: 'pasing', cashStartCents: 0, stockStart: { [helles.id]: 20 } } })).body;
+  await s.call('POST', `/app/api/bar/${ses.id}/sales`, { token: chef, body: { payment: 'bar', items: [{ productId: helles.id, qty: 10 }] } });
+  const r = (await s.call('POST', `/app/api/bar/${ses.id}/close`, { token: chef, body: { cashEndCents: 4500, stockEnd: { [helles.id]: 9 } } })).body;
+  assert.deepEqual([r.cogsCents, r.missingCogsCents], [710, 71]);
+  await s.call('POST', '/app/api/purchases', { token: chef, body: { date: r.date, supplier: 'METRO Pasing', totalCents: 34738, depositCents: 8378 } });
+  const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
+  const k = d.kpis.find((x) => x.id === 'cogsPct');
+  assert.equal(Math.round(k.value * 10) / 10, Math.round((781 / 4500) * 1000) / 10);
+  assert.match(k.hint, /Einkäufe 263,60 €/);
+  assert.equal(d.totals.cogsCents, 781);
+  s.close();
+});

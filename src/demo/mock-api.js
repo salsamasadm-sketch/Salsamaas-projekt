@@ -8,11 +8,11 @@
   const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = window.__cockpit.dashboard;
   const { computeSettlement, buildHelpers, helperShift } = window.__cockpit.bar;
   const { computeWeek, computeInvoices, mondayOf, addDays } = window.__cockpit.plan;
-  const KEY = 'cockpit.demo.db.v6';
+  const KEY = 'cockpit.demo.db.v7';
   const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
   let db;
   try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
-  db.plan = db.plan || {}; db.invoices = db.invoices || {};
+  db.plan = db.plan || {}; db.invoices = db.invoices || {}; db.purchases = db.purchases || {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { /* privat */ } };
   window.__cockpit.resetDemo = () => { db = fresh(); save(); try { localStorage.removeItem('cockpit.auth'); } catch { /* */ } location.reload(); };
 
@@ -131,10 +131,10 @@
     const qf = query.get('from'), qt = query.get('to');
     const range = /^\d{4}-\d{2}-\d{2}$/.test(qf || '') && /^\d{4}-\d{2}-\d{2}$/.test(qt || '') && qf <= qt ? { from: qf, to: qt } : month ? rangeOf({ month }) : null;
     const inR = (d) => !range || (d >= range.from && d <= range.to);
-    const data = () => ({ invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main });
+    const data = () => ({ purchases: list('purchases'), invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main });
     if (method === 'GET' && path === '/year') return json(200, computeYear({ year: Number(query.get('year')) || Number(today().slice(0, 4)), ...data() }));
     if (method === 'GET' && path === '/dashboard') {
-      return json(200, computeDashboard({ ...(range || rangeOf({ month: today().slice(0, 7) })), invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main }));
+      return json(200, computeDashboard({ ...(range || rangeOf({ month: today().slice(0, 7) })), purchases: list('purchases'), invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main }));
     }
     if (method === 'GET' && path === '/bar/sessions') return json(200, list('barsessions').filter((b) => inR(b.date)).map(settle).sort((a, b) => b.date.localeCompare(a.date)));
     if (method === 'GET' && path === '/staff') return json(200, list('staff').map(publicStaff).sort((a, b) => a.ref.localeCompare(b.ref)));
@@ -159,6 +159,15 @@
     }
     if (method === 'PATCH' && (m = path.match(/^\/shifts\/([^/]+)$/))) { const sh = db.shifts[m[1]]; if (!sh) return err(404, 'not_found'); sh.paid = !!body.paid; save(); return json(200, sh); }
     if (method === 'DELETE' && (m = path.match(/^\/shifts\/([^/]+)$/))) { if (!db.shifts[m[1]]) return err(404, 'not_found'); delete db.shifts[m[1]]; save(); return json(204); }
+    // Getraenkekarte + Einkaeufe
+    if (method === 'POST' && path === '/products/import-catalog') {
+      const have = new Set(list('products').map((p) => p.name.toLowerCase())); let n = 0;
+      for (const [i, c] of window.__cockpit.catalog.CATALOG.entries()) { if (have.has(c.name.toLowerCase())) continue; const id = uid(); db.products[id] = { id, name: c.name, priceCents: c.priceCents, costCents: c.costCents, category: c.category, active: true, sort: 100 + i * 10 }; n++; }
+      save(); return json(200, { created: n });
+    }
+    if (method === 'GET' && path === '/purchases') return json(200, list('purchases').filter((p) => inR(p.date)).sort((a, b) => b.date.localeCompare(a.date)));
+    if (method === 'POST' && path === '/purchases') { if (!body.supplier || !body.date || !(body.totalCents >= 0)) return err(400, 'validation_failed', 'Datum, Lieferant und Betrag angeben'); const p = { id: uid(), depositCents: 0, ...body }; db.purchases[p.id] = p; save(); return json(201, p); }
+    if (method === 'DELETE' && (m = path.match(/^\/purchases\/([^/]+)$/))) { if (!db.purchases[m[1]]) return err(404, 'not_found'); delete db.purchases[m[1]]; save(); return json(204); }
     // Wochenplan
     if (method === 'GET' && path === '/plan') return json(200, computeWeek({ week: /^\d{4}-\d{2}-\d{2}$/.test(query.get('week') || '') ? query.get('week') : today(), plan: list('plan'), staff: list('staff'), shifts: list('shifts'), settings: mergeSettings(db.settings.main) }));
     if (method === 'POST' && path === '/plan/copy') {

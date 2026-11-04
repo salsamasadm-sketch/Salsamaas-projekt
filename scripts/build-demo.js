@@ -52,6 +52,7 @@ window.__cockpit = {};
 window.COCKPIT_DEMO = true;
 window.COCKPIT_DEFAULT_MONTH = ${JSON.stringify(month)};
 ${safe(wrap('src/bar.js', 'bar'))}
+${safe(wrap('src/catalog.js', 'catalog'))}
 ${safe(wrap('src/plan.js', 'plan', { './bar': 'bar' }))}
 ${safe(wrap('src/dashboard.js', 'dashboard', { './bar': 'bar', './plan': 'plan' }))}
 window.__cockpit.seed = ${safe(JSON.stringify(db))};

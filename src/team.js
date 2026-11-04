@@ -35,8 +35,9 @@ const ownShift = z.object({ kind: KIND, location: LOC, start: iso, end: iso }).s
   .refine((s) => new Date(s.end) > new Date(s.start) && new Date(s.end) - new Date(s.start) <= 16 * 3_600_000, 'Ende muss nach Start liegen (max. 16 Std.)');
 const CATEGORIES = ['eintritt', 'workshop', 'kursgebuehr', 'softdrinks', 'bier', 'wein', 'cocktails', 'longdrinks', 'shots', 'heiss', 'snacks', 'sonstiges'];
 const pname = z.string().trim().min(1).max(40).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen');
-const productCreate = z.object({ name: pname, priceCents: cents(100_000), category: z.enum(CATEGORIES), active: z.boolean().default(true), sort: z.number().int().min(0).max(999).default(100) }).strict();
-const productPatch = z.object({ name: pname.optional(), priceCents: cents(100_000).optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
+const { CATALOG } = require('./catalog');
+const productCreate = z.object({ name: pname, priceCents: cents(100_000), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES), active: z.boolean().default(true), sort: z.number().int().min(0).max(999).default(100) }).strict();
+const productPatch = z.object({ name: pname.optional(), priceCents: cents(100_000).optional(), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
 const stock = z.record(S.id, z.number().int().min(0).max(10_000)).refine((o) => Object.keys(o).length <= 300, 'zu viele Artikel');
 const sessionOpen = z.object({ location: LOC, station: z.enum(STATIONS).default('theke'), cashStartCents: cents(10_000_000), stockStart: stock.default({}) }).strict();
@@ -49,7 +50,7 @@ const staffCreate = z.object({ ref, pin, hourlyRateCents: cents(20_000), employm
 const staffPatch = z.object({ pin: pin.optional(), hourlyRateCents: cents(20_000).optional(), employment: EMPLOY.optional(), active: z.boolean().optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
 const settingsSchema = z.object({
-  targets: z.object({ utilizationPct: z.number().min(0).max(100), openPaymentsPct: z.number().min(0).max(100), barPerGuestCents: cents(100_000), barPersonnelPct: z.number().min(0).max(200) }).strict(),
+  targets: z.object({ utilizationPct: z.number().min(0).max(100), openPaymentsPct: z.number().min(0).max(100), barPerGuestCents: cents(100_000), barPersonnelPct: z.number().min(0).max(200), costRatioPct: z.number().min(0).max(200).default(30) }).strict(),
   fixedCostsCents: z.object({ maxvorstadt: cents(100_000_000), pasing: cents(100_000_000) }).strict(),
   minijobLimitCents: cents(1_000_000),
 }).strict();
@@ -303,10 +304,10 @@ function createTeamRouter({ store, keys, sessions, logger }) {
   // --- Nur Chef ---
   r.get('/dashboard', owner, wrap(async (req, res) => {
     const range = rangeQ(req.query, true);
-    const [courses, enrollments, staff, shifts, barsessions, sales, products, settings, invoices] = await Promise.all([
-      store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'), store.listDocs('invoices'),
+    const [courses, enrollments, staff, shifts, barsessions, sales, products, settings, invoices, purchases] = await Promise.all([
+      store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'), store.listDocs('invoices'), store.listDocs('purchases'),
     ]);
-    res.json(computeDashboard({ ...range, invoices, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
+    res.json(computeDashboard({ ...range, invoices, purchases, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
   }));
 
   // --- Wochenplan (Chef) ---
@@ -379,7 +380,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const [courses, enrollments, staff, shifts, barsessions, sales, products, settings] = await Promise.all([
       store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'),
     ]);
-    res.json(computeYear({ year, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
+    res.json(computeYear({ year, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings, purchases: await store.listDocs('purchases') }));
   }));
 
   r.get('/bar/sessions', owner, wrap(async (req, res) => {
@@ -422,6 +423,35 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     await store.putDoc('products', p); log(req, 'product_created');
     res.status(201).json(p);
   }));
+  // Salsamas-Getraenkekarte uebernehmen (legt nur fehlende Artikel an)
+  r.post('/products/import-catalog', owner, wrap(async (req, res) => {
+    const existing = new Set((await store.listDocs('products')).map((p) => p.name.toLowerCase()));
+    let n = 0;
+    for (const [i, c] of CATALOG.entries()) {
+      if (existing.has(c.name.toLowerCase())) continue;
+      await store.putDoc('products', { id: crypto.randomUUID(), name: c.name, priceCents: c.priceCents, costCents: c.costCents, category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date().toISOString() }); n++;
+    }
+    log(req, 'catalog_imported'); res.json({ created: n });
+  }));
+
+  // Einkaeufe (z. B. METRO-Rechnung): Datum, Lieferant, Betrag brutto, davon Pfand
+  const purchaseSchema = z.object({ date, supplier: short(40), totalCents: cents(10_000_000), depositCents: cents(10_000_000).default(0), location: LOC.optional(), note: short(200).optional() }).strict()
+    .refine((p) => p.depositCents <= p.totalCents, 'Pfand größer als Betrag');
+  r.get('/purchases', owner, wrap(async (req, res) => {
+    const range = rangeQ(req.query, false);
+    res.json((await store.listDocs('purchases')).filter((p) => inR(range, p.date)).sort((a, b) => b.date.localeCompare(a.date)));
+  }));
+  r.post('/purchases', owner, wrap(async (req, res) => {
+    const d = parse(purchaseSchema, req.body, res); if (!d) return;
+    const p = { id: crypto.randomUUID(), ...d, createdAt: new Date().toISOString() };
+    await store.putDoc('purchases', p); log(req, 'purchase_added');
+    res.status(201).json(p);
+  }));
+  r.delete('/purchases/:id', owner, wrap(async (req, res) => {
+    if (!S.id.safeParse(req.params.id).success || !(await store.removeDoc('purchases', req.params.id))) return res.status(404).json({ error: 'not_found' });
+    log(req, 'purchase_deleted'); res.sendStatus(204);
+  }));
+
   r.patch('/products/:id', owner, wrap(async (req, res) => {
     const d = parse(productPatch, req.body, res); if (!d) return;
     const cur = S.id.safeParse(req.params.id).success ? await store.getDoc('products', req.params.id) : null;

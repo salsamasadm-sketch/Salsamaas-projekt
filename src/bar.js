@@ -79,6 +79,11 @@ function computeSettlement(session, sales, products = []) {
 
   const helpers = session.helpers || [];
   const helperCash = helpers.filter((x) => x.payout === 'bar').reduce((a, x) => a + x.payCents, 0);
+  // Wareneinsatz zum Einkaufspreis (netto): verkauft + gratis, dazu Fehlmenge separat
+  const costOf = new Map(products.map((p) => [p.id, p.costCents]));
+  const cogs = items.reduce((a, i) => a + (costOf.get(i.productId) ?? 0) * i.sold, 0);
+  const missingCogs = items.reduce((a, i) => a + (i.diff != null && i.diff < 0 ? -i.diff * (costOf.get(i.productId) ?? 0) : 0), 0);
+  const noCostItems = items.filter((i) => i.sold > 0 && costOf.get(i.productId) == null).map((i) => i.name);
   const cashExpected = (session.cashStartCents || 0) + cash - (session.cashOutCents || 0) - helperCash;
   const cashCounted = session.cashEndCents ?? null;
   const missingUnits = items.reduce((a, i) => a + (i.diff != null && i.diff < 0 ? -i.diff : 0), 0);
@@ -90,7 +95,7 @@ function computeSettlement(session, sales, products = []) {
     tickets: [...tickets.values()].sort((a, b) => b.qty - a.qty),
     cashStartCents: session.cashStartCents || 0, cashOutCents: session.cashOutCents || 0, helpers, helperCashCents: helperCash,
     cashExpectedCents: cashExpected, cashCountedCents: cashCounted, cashDiffCents: cashCounted == null ? null : cashCounted - cashExpected,
-    items, missingUnits, freeUnits,
+    items, missingUnits, freeUnits, cogsCents: cogs, missingCogsCents: missingCogs, noCostItems,
     // Warenwert der Fehlmenge zum Verkaufspreis (zeigt, was der Schwund an Umsatz kostet)
     missingValueCents: items.reduce((a, i) => a + (i.diff != null && i.diff < 0 ? -i.diff * (products.find((p) => p.id === i.productId)?.priceCents || 0) : 0), 0),
     // Gaeste: gezaehlte Tickets; sonst die beim Schliessen geschaetzte Zahl

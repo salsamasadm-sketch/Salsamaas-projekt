@@ -7,7 +7,7 @@ const { computeInvoices } = require('./plan');
  */
 
 const DEFAULT_SETTINGS = {
-  targets: { utilizationPct: 75, openPaymentsPct: 5, barPerGuestCents: 600, barPersonnelPct: 30 },
+  targets: { utilizationPct: 75, openPaymentsPct: 5, barPerGuestCents: 600, barPersonnelPct: 30, costRatioPct: 30 },
   fixedCostsCents: { maxvorstadt: 0, pasing: 0 },
   minijobLimitCents: 60300, // Minijob-Grenze 2026 (bei Gesetzesaenderung in den Einstellungen anpassen)
 };
@@ -72,7 +72,7 @@ function proratedFixed(monthlyCents, r) {
   return Math.round(total);
 }
 
-function computeDashboard({ month, from, to, compare = true, invoices = [], now = new Date(), courses = [], enrollments = [], staff = [], shifts = [], barsessions = [], sales = [], products = [], settings }) {
+function computeDashboard({ month, from, to, compare = true, invoices = [], purchases = [], now = new Date(), courses = [], enrollments = [], staff = [], shifts = [], barsessions = [], sales = [], products = [], settings }) {
   const cfg = mergeSettings(settings);
   const t = cfg.targets;
   const range = rangeOf({ month, from, to });
@@ -96,6 +96,11 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], now 
   const closed = bars.filter((b) => b.status === 'closed');
   const cashDiff = closed.length ? sum(closed, (b) => b.cashDiffCents || 0) : null;
   const missingUnits = sum(closed, (b) => b.missingUnits);
+  // Wareneinsatz (Einkaufspreis netto) fuer verkaufte/gratis Getraenke plus Schwund
+  const cogs = sum(bars, (b) => (b.cogsCents || 0) + (b.missingCogsCents || 0));
+  const noCost = [...new Set(bars.flatMap((b) => b.noCostItems || []))];
+  const purchasesInRange = purchases.filter((p) => inMonth(p.date));
+  const purchaseSum = sum(purchasesInRange, (p) => p.totalCents - (p.depositCents || 0));
   const missingValue = sum(closed, (b) => b.missingValueCents);
 
   // --- Personal ---
@@ -134,7 +139,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], now 
   const fixedMonthly = sum(Object.values(cfg.fixedCostsCents), (v) => v || 0);
   const fixed = proratedFixed(fixedMonthly, range);
   const income = barRevenue + ticketRevenue + courseRevenue;
-  const costs = personnelCost + fixed;
+  const costs = personnelCost + fixed + cogs;
   const profit = income - costs;
 
   const kpis = [
@@ -145,6 +150,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], now 
     { id: 'missing', label: 'Inventar-Fehlmenge', unit: 'count', value: closed.length ? missingUnits : null, hint: missingUnits ? `≈ ${eur(missingValue)} Umsatz` : 'Bestand passt', status: !closed.length ? 'none' : missingUnits === 0 ? 'ok' : missingUnits <= 3 ? 'warn' : 'bad' },
     { id: 'barPerGuest', label: 'Getränke pro Gast', unit: 'eur', value: barPerGuest, target: t.barPerGuestCents, status: status(barPerGuest, t.barPerGuestCents, 'min') },
     { id: 'barPersonnelPct', label: 'Personalquote Bar', unit: 'pct', value: barPersonnelPct, target: t.barPersonnelPct, status: status(barPersonnelPct, t.barPersonnelPct, 'max') },
+    { id: 'cogsPct', label: 'Wareneinsatz Getränke', unit: 'pct', value: barRevenue > 0 && cogs > 0 ? (cogs / barRevenue) * 100 : null, target: t.costRatioPct, hint: `${eur(cogs)} Einkaufswert${purchasesInRange.length ? ` · Einkäufe ${eur(purchaseSum)} (ohne Pfand)` : ''}`, status: barRevenue > 0 && cogs > 0 ? status((cogs / barRevenue) * 100, t.costRatioPct, 'max') : 'none' },
     { id: 'personnelCost', label: 'Personalkosten', unit: 'eur', value: personnelCost, hint: `davon Bar ${eur(barPersonnelCost)}`, status: 'none' },
     { id: 'utilizationPct', label: 'Kurs-Auslastung', unit: 'pct', value: utilizationPct, target: t.utilizationPct, status: status(utilizationPct, t.utilizationPct, 'min') },
     { id: 'openPaymentsPct', label: 'Offene Zahlungen', unit: 'pct', value: openPaymentsPct, target: t.openPaymentsPct, hint: `${openEnr.length} offen, ${eur(openOwed)}`, status: status(openPaymentsPct, t.openPaymentsPct, 'max') },
@@ -222,6 +228,8 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], now 
     insights.push({ level: 'warn', text: `Kurs „${c.title}" (${LOC_LABEL[c.location]}) nur zu ${c.utilizationPct} % gebucht. Gezielt bewerben (Story, WhatsApp-Gruppen) oder Termin überdenken.` });
   }
   if (utilizationPct != null && utilizationPct >= 95) insights.push({ level: 'info', text: `Kurse fast voll (${pct(utilizationPct)}). Zusatztermin oder Warteliste lohnt sich.` });
+  if (barRevenue > 0 && cogs > 0 && (cogs / barRevenue) * 100 > t.costRatioPct) insights.push({ level: 'warn', text: `Wareneinsatz Getränke ${pct((cogs / barRevenue) * 100)} (Ziel ${pct(t.costRatioPct)}). Preise der Getränke mit der kleinsten Marge prüfen (Getränke-Tab).` });
+  if (noCost.length) insights.push({ level: 'info', text: `Für ${noCost.slice(0, 4).join(', ')}${noCost.length > 4 ? ' u. a.' : ''} fehlt der Einkaufspreis – der Wareneinsatz ist dadurch zu niedrig. Im Getränke-Tab ergänzen.` });
   if (missingUnits > 0) insights.push({ level: 'warn', text: `Im Monat fehlen ${missingUnits} Artikel laut Inventar (≈ ${eur(missingValue)} Umsatz). Zählung beim Öffnen/Schließen zu zweit machen und Freigetränke immer als „Personal/Gratis" buchen.` });
   if (bars.length === 0 && monthShifts.length === 0) insights.push({ level: 'info', text: 'Für diesen Monat gibt es noch keine Bar- oder Schichtdaten.' });
 
@@ -283,7 +291,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], now 
     shopping,
     personnel: { totalCents: personnelCost, barCents: barPersonnelCost, byStaff, helpers: monthShifts.filter((s) => s.helper).map((s) => ({ id: s.id, name: s.staffRef, date: berlinDate(s.start), hours: shiftHours(s, now), payCents: shiftCost(s, now), payout: s.payout, paid: !!s.paid, location: s.location })) },
     courses: { utilizationPct, participants, capacity: cap, openCount: openEnr.length, openOwedCents: openOwed, rows: courseRows },
-    totals: { incomeCents: income, costsCents: costs, fixedCents: fixed, profitCents: profit },
+    totals: { incomeCents: income, costsCents: costs, fixedCents: fixed, cogsCents: cogs, purchasesCents: purchaseSum, profitCents: profit },
   };
 }
 
@@ -298,12 +306,12 @@ function computeYear({ year, ...data }) {
     months.push({ empty,
       month: d.month, nights: d.bar.nights, guests: d.bar.guests,
       ticketCents: d.bar.ticketRevenueCents, drinksCents: d.bar.revenueCents, courseCents: d.totals.incomeCents - d.bar.revenueCents - d.bar.ticketRevenueCents,
-      incomeCents: d.totals.incomeCents, personnelCents: d.personnel.totalCents, fixedCents: d.totals.fixedCents, costsCents: d.totals.costsCents, profitCents: d.totals.profitCents,
+      incomeCents: d.totals.incomeCents, personnelCents: d.personnel.totalCents, cogsCents: d.totals.cogsCents, fixedCents: d.totals.fixedCents, costsCents: d.totals.costsCents, profitCents: d.totals.profitCents,
       cashDiffCents: d.bar.cashDiffCents, missingUnits: d.bar.missingUnits,
       perGuestCents: d.kpis.find((k) => k.id === 'barPerGuest').value,
     });
   }
-  const keys = ['nights', 'guests', 'ticketCents', 'drinksCents', 'courseCents', 'incomeCents', 'personnelCents', 'fixedCents', 'costsCents', 'profitCents', 'missingUnits'];
+  const keys = ['nights', 'guests', 'ticketCents', 'drinksCents', 'courseCents', 'incomeCents', 'personnelCents', 'cogsCents', 'fixedCents', 'costsCents', 'profitCents', 'missingUnits'];
   const totals = Object.fromEntries(keys.map((k) => [k, sum(months, (x) => x[k] || 0)]));
   return { year, months, totals };
 }

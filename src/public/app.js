@@ -446,7 +446,7 @@
       h('div', { class: 'value' }, value), deltaEl, sub && h('div', { class: 'sub' }, sub));
   }
   // Veraenderung zur Vorperiode; Farbe danach, ob mehr hier gut oder schlecht ist
-  const HIGHER_IS_BETTER = { profit: true, ticketRevenue: true, barRevenue: true, barPerGuest: true, utilizationPct: true, courseRevenue: true, missing: false, barPersonnelPct: false, personnelCost: false, openPaymentsPct: false };
+  const HIGHER_IS_BETTER = { cogsPct: false, profit: true, ticketRevenue: true, barRevenue: true, barPerGuest: true, utilizationPct: true, courseRevenue: true, missing: false, barPersonnelPct: false, personnelCost: false, openPaymentsPct: false };
   function delta(k, prevLabel, inline) {
     if (k.prev == null || k.value == null || !(k.id in HIGHER_IS_BETTER)) return null;
     const diff = k.value - k.prev;
@@ -518,9 +518,10 @@
         h('tr', {}, h('td', {}, 'Eintritt & Workshops'), h('td', { class: 'num' }, eur(d.bar.ticketRevenueCents))),
         h('tr', {}, h('td', {}, 'Getränke'), h('td', { class: 'num' }, eur(d.bar.revenueCents))),
         h('tr', {}, h('td', {}, 'Personalkosten'), h('td', { class: 'num' }, `− ${eur(d.personnel.totalCents)}`)),
+        h('tr', {}, h('td', {}, 'Wareneinsatz Getränke'), h('td', { class: 'num' }, `− ${eur(d.totals.cogsCents || 0)}`)),
         h('tr', {}, h('td', {}, 'Fixkosten'), h('td', { class: 'num' }, `− ${eur(d.totals.fixedCents)}`)),
         h('tr', {}, h('th', {}, 'Ergebnis'), h('th', { class: 'num' }, eur(d.totals.profitCents))))),
-      h('p', { class: 'muted small' }, 'Prototyp: Wareneinkauf ist noch nicht abgezogen. Kurseinnahmen zählen im Monat der Anmeldung.'));
+      h('p', { class: 'muted small' }, 'Wareneinsatz = verkaufte, gratis ausgegebene und fehlende Getränke zum Einkaufspreis netto. Kurseinnahmen zählen im Monat der Anmeldung bzw. Zahlung vor Ort.'));
   }
 
   // Grosse Zahl zaehlt beim Oeffnen kurz hoch (ohne Bewegung, wenn reduziert gewuenscht)
@@ -697,7 +698,7 @@
     // Monatsvergleich A gegen B
     const mA = y.months.find((m) => m.month === cmp.a) || y.months[0];
     const mB = y.months.find((m) => m.month === cmp.b) || y.months[1];
-    const ROWS = [['Kassenabende', 'nights', 'n', true], ['Gäste', 'guests', 'n', true], ['Eintritt & Workshops', 'ticketCents', 'eur', true], ['Getränke', 'drinksCents', 'eur', true], ['Kurseinnahmen', 'courseCents', 'eur', true], ['Einnahmen gesamt', 'incomeCents', 'eur', true], ['Personalkosten', 'personnelCents', 'eur', false], ['Fixkosten', 'fixedCents', 'eur', false], ['Ergebnis', 'profitCents', 'eur', true], ['Getränke pro Gast', 'perGuestCents', 'eur', true], ['Fehlmenge Inventar', 'missingUnits', 'n', false]];
+    const ROWS = [['Kassenabende', 'nights', 'n', true], ['Gäste', 'guests', 'n', true], ['Eintritt & Workshops', 'ticketCents', 'eur', true], ['Getränke', 'drinksCents', 'eur', true], ['Kurseinnahmen', 'courseCents', 'eur', true], ['Einnahmen gesamt', 'incomeCents', 'eur', true], ['Personalkosten', 'personnelCents', 'eur', false], ['Wareneinsatz', 'cogsCents', 'eur', false], ['Fixkosten', 'fixedCents', 'eur', false], ['Ergebnis', 'profitCents', 'eur', true], ['Getränke pro Gast', 'perGuestCents', 'eur', true], ['Fehlmenge Inventar', 'missingUnits', 'n', false]];
     const fmt = (v, u) => (v == null ? '–' : u === 'eur' ? eur(Math.round(v)) : String(v));
     const monthSel = (id, key) => h('select', { id, onchange: (e) => { cmp[key] = e.target.value; route('jahr'); } }, y.months.map((m, i) => h('option', { value: m.month, selected: m.month === cmp[key] }, `${MN[i]} ${year}`)));
     const compare = h('div', { class: 'card' },
@@ -729,9 +730,9 @@
       h('h2', {}, 'Monate vergleichen'), compare,
       h('h2', {}, 'Alle Monate · Spalte antippen zum Sortieren'),
       h('div', { class: 'card table-wrap' }, h('table', {},
-        h('tr', {}, h('th', {}, 'Monat'), h('th', { class: 'num' }, 'Abende'), h('th', { class: 'num' }, 'Gäste'), h('th', { class: 'num' }, 'Eintritt'), h('th', { class: 'num' }, 'Getränke'), h('th', { class: 'num' }, 'Kurse'), h('th', { class: 'num' }, 'Personal'), h('th', { class: 'num' }, 'Fixkosten'), h('th', { class: 'num' }, 'Ergebnis')),
-        y.months.map((m, i) => h('tr', { class: 'clickable', onclick: openMonth(m.month) }, h('td', { 'data-sort': m.month }, `${MN[i]} ${year}`), cell(m.nights), cell(m.guests), cell(eur(m.ticketCents)), cell(eur(m.drinksCents)), cell(eur(m.courseCents)), cell(eur(m.personnelCents)), cell(eur(m.fixedCents)), cell(eur(m.profitCents), m.profitCents < 0 ? 'badtxt' : ''))),
-        h('tr', { class: 'total-row' }, h('td', {}, 'Summe'), cell(y.totals.nights), cell(y.totals.guests), cell(eur(y.totals.ticketCents)), cell(eur(y.totals.drinksCents)), cell(eur(y.totals.courseCents)), cell(eur(y.totals.personnelCents)), cell(eur(y.totals.fixedCents)), cell(eur(y.totals.profitCents))))));
+        h('tr', {}, h('th', {}, 'Monat'), h('th', { class: 'num' }, 'Abende'), h('th', { class: 'num' }, 'Gäste'), h('th', { class: 'num' }, 'Eintritt'), h('th', { class: 'num' }, 'Getränke'), h('th', { class: 'num' }, 'Kurse'), h('th', { class: 'num' }, 'Personal'), h('th', { class: 'num' }, 'Wareneinsatz'), h('th', { class: 'num' }, 'Fixkosten'), h('th', { class: 'num' }, 'Ergebnis')),
+        y.months.map((m, i) => h('tr', { class: 'clickable', onclick: openMonth(m.month) }, h('td', { 'data-sort': m.month }, `${MN[i]} ${year}`), cell(m.nights), cell(m.guests), cell(eur(m.ticketCents)), cell(eur(m.drinksCents)), cell(eur(m.courseCents)), cell(eur(m.personnelCents)), cell(eur(m.cogsCents || 0)), cell(eur(m.fixedCents)), cell(eur(m.profitCents), m.profitCents < 0 ? 'badtxt' : ''))),
+        h('tr', { class: 'total-row' }, h('td', {}, 'Summe'), cell(y.totals.nights), cell(y.totals.guests), cell(eur(y.totals.ticketCents)), cell(eur(y.totals.drinksCents)), cell(eur(y.totals.courseCents)), cell(eur(y.totals.personnelCents)), cell(eur(y.totals.cogsCents || 0)), cell(eur(y.totals.fixedCents)), cell(eur(y.totals.profitCents))))));
   }
 
   // ---------- Chef: Abrechnungen ----------
@@ -753,6 +754,22 @@
     const a = h('a', { href: url, download: `salsamas-${kind}-${month}.csv` }); document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
+  async function purchasesSection() {
+    const list = await api('GET', `/purchases?${pq()}`);
+    const f = { date: h('input', { type: 'date', id: 'pu-date', value: todayStr(), required: true }), supplier: h('input', { id: 'pu-sup', maxlength: 40, required: true, value: 'METRO', placeholder: 'Lieferant' }), total: h('input', { id: 'pu-total', inputmode: 'decimal', required: true, placeholder: 'Summe brutto, z. B. 347,38' }), dep: h('input', { id: 'pu-dep', inputmode: 'decimal', placeholder: 'davon Pfand, z. B. 83,78' }), location: select(LOC, loc, { id: 'pu-loc' }), note: h('input', { id: 'pu-note', maxlength: 200, placeholder: 'optional, z. B. Getränke für Halloween-Party' }) };
+    const sumT = list.reduce((a, p) => a + p.totalCents, 0), sumD = list.reduce((a, p) => a + (p.depositCents || 0), 0);
+    return h('div', {}, h('h2', {}, `Einkäufe · ${periodLabel()}`),
+      h('div', { class: 'card' },
+        list.length ? h('div', { class: 'table-wrap' }, h('table', {}, h('tr', {}, h('th', {}, 'Datum'), h('th', {}, 'Lieferant'), h('th', {}, 'Standort'), h('th', { class: 'num' }, 'Brutto'), h('th', { class: 'num' }, 'Pfand'), h('th', { class: 'num' }, 'Ware'), h('th', {}, '')),
+          list.map((p) => h('tr', {}, h('td', {}, dmy(p.date)), h('td', {}, p.supplier, p.note && h('div', { class: 'small muted' }, p.note)), h('td', {}, p.location ? LOC[p.location] : '–'), h('td', { class: 'num' }, eur(p.totalCents)), h('td', { class: 'num' }, eur(p.depositCents || 0)), h('td', { class: 'num' }, eur(p.totalCents - (p.depositCents || 0))),
+            h('td', {}, h('button', { type: 'button', class: 'link', onclick: run(async () => { if (!await ask(`Einkauf ${p.supplier} vom ${dmy(p.date)} löschen?`)) return; await api('DELETE', `/purchases/${p.id}`); route('einkauf'); }) }, 'löschen')))),
+          h('tr', { class: 'total-row' }, h('td', {}, 'Summe'), h('td', {}), h('td', {}), h('td', { class: 'num' }, eur(sumT)), h('td', { class: 'num' }, eur(sumD)), h('td', { class: 'num' }, eur(sumT - sumD)), h('td', {})))) : h('p', { class: 'muted' }, 'Im gewählten Zeitraum noch keine Einkäufe erfasst.'),
+        h('details', {}, h('summary', {}, '+ Einkauf erfassen (z. B. METRO-Rechnung)'),
+          h('form', { onsubmit: run(async () => { const t = toCents(f.total.value); const dp = f.dep.value.trim() ? toCents(f.dep.value) : 0; if (t == null || dp == null) throw new Error('Beträge prüfen'); await api('POST', '/purchases', { date: f.date.value, supplier: f.supplier.value.trim(), totalCents: t, depositCents: dp, location: f.location.value, ...(f.note.value.trim() && { note: f.note.value.trim() }) }); toast('Einkauf gespeichert'); route('einkauf'); }) },
+            h('div', { class: 'grid2' }, field('Datum', f.date), field('Lieferant', f.supplier), field('Summe brutto €', f.total), field('davon Pfand €', f.dep), field('Standort', f.location), field('Notiz', f.note)),
+            h('p', { class: 'small muted' }, 'Pfand wird getrennt erfasst, weil es zurückkommt. Der Wareneinsatz im Ergebnis rechnet mit den Einkaufspreisen pro Getränk (Getränke-Tab), nicht mit diesen Summen.'),
+            h('button', { class: 'btn', type: 'submit' }, 'Speichern')))));
+  }
   async function viewEinkauf() {
     const d = await api('GET', `/dashboard?${pq()}`);
     const text = Object.keys(LOC).map((l) => { const x = d.shopping.filter((i) => i.location === l); return x.length ? `Einkauf ${LOC[l]}:\n${x.map((i) => `- ${i.need}× ${i.name}`).join('\n')}` : ''; }).filter(Boolean).join('\n\n');
@@ -760,6 +777,7 @@
       h('p', { class: 'muted small' }, 'Aus dem letzten gezählten Endbestand und dem Ø-Verbrauch der letzten 4 Abende (mit 50 % Puffer).'),
       Object.keys(LOC).map((l) => { const x = d.shopping.filter((i) => i.location === l); return h('div', { class: 'card' }, h('b', {}, LOC[l]), x.length ? h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', { class: 'num' }, 'Bestand'), h('th', { class: 'num' }, 'Ø/Abend'), h('th', { class: 'num' }, 'Kaufen')), x.map((i) => h('tr', {}, h('td', {}, i.name), h('td', { class: 'num' }, i.stock), h('td', { class: 'num' }, String(i.avgPerNight).replace('.', ',')), h('td', { class: 'num' }, h('b', {}, i.need))))) : h('p', { class: 'muted' }, 'Alles ausreichend da.')); }),
       text && h('button', { class: 'btn', type: 'button', onclick: run(async () => { await navigator.clipboard.writeText(text); toast('Liste kopiert – z. B. in WhatsApp einfügen'); }) }, 'Liste kopieren (für WhatsApp)'),
+      await purchasesSection(),
       h('h2', {}, 'Export für Buchhaltung'),
       h('div', { class: 'card' }, h('div', { class: 'row spread' }, h('span', {}, 'Monat'), monthPicker(() => route('einkauf'))),
         h('p', { class: 'muted small' }, 'CSV-Dateien, öffnen sich direkt in Excel oder Numbers.'),
@@ -839,18 +857,32 @@
   // ---------- Chef: Getraenke ----------
   async function viewArtikel() {
     const list = await api('GET', '/products');
-    const name = h('input', { required: true, maxlength: 40, placeholder: 'z. B. Mojito oder Eintritt Übungsabend' });
-    const price = h('input', { required: true, inputmode: 'decimal', placeholder: '8,50' });
-    const cat = select(CAT, 'eintritt');
+    const name = h('input', { required: true, maxlength: 40, placeholder: 'z. B. Hugo oder Eintritt Übungsabend' });
+    const price = h('input', { required: true, inputmode: 'decimal', placeholder: '8,00' });
+    const cost = h('input', { inputmode: 'decimal', placeholder: 'z. B. 0,71' });
+    const cat = select(CAT, 'softdrinks');
+    const editMoney = (p, key, label) => run(async () => { const v = await ask(`${label} für ${p.name} in €`, { value: p[key] != null ? fromCents(p[key]) : '', inputmode: 'decimal' }); if (v == null) return; const c = v.trim() === '' ? null : toCents(v); if (v.trim() !== '' && c == null) throw new Error('Betrag prüfen'); await api('PATCH', `/products/${p.id}`, { [key]: c }); route('artikel'); });
+    const drinks = list.filter((p) => !TICKET.includes(p.category));
+    const other = list.filter((p) => TICKET.includes(p.category));
+    const margin = (p) => (p.costCents == null ? null : { eur: p.priceCents - p.costCents, pct: p.priceCents ? Math.round((1 - p.costCents / p.priceCents) * 100) : 0 });
+    const missingCost = drinks.filter((p) => p.active && p.costCents == null).length;
     return h('div', {}, h('h1', {}, 'Getränke & Preise'),
-      h('form', { class: 'card', onsubmit: run(async () => { const c = toCents(price.value); if (c == null) throw new Error('Preis prüfen'); await api('POST', '/products', { name: name.value.trim(), priceCents: c, category: cat.value }); toast('Angelegt'); route('artikel'); }) },
-        h('div', { class: 'grid3' }, field('Name', name), field('Preis €', price), field('Kategorie', cat)), h('button', { class: 'btn', type: 'submit' }, '+ Hinzufügen')),
-      h('div', { class: 'card table-wrap' }, list.length ? h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', {}, '')),
-        list.map((p) => h('tr', { class: p.active ? '' : 'muted' }, h('td', {}, p.name), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
-          h('td', { class: 'row' },
-            h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = await ask(`Neuer Preis für ${p.name} in €`, { value: fromCents(p.priceCents), inputmode: 'decimal' }); if (v == null) return; const c = toCents(v); if (c == null) throw new Error('Preis prüfen'); await api('PATCH', `/products/${p.id}`, { priceCents: c }); route('artikel'); }) }, 'Preis'),
-            h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))))) : h('p', { class: 'muted' }, 'Noch keine Getränke.')),
-      h('p', { class: 'muted small' }, 'Eintritt und Workshops zählen jeden Gast, haben aber kein Inventar. Kursgebühren (z. B. „Kurs 4 Wochen", „Einzelstunde") laufen ohne Inventar in die Kurseinnahmen. Für Workshop-Teilnehmer, die zum Übungsabend bleiben, ein Ticket mit 0 € anlegen (z. B. „Workshop-Teilnehmer inkl."). Ausgeblendete Artikel erscheinen nicht mehr an der Kasse, alte Abrechnungen bleiben erhalten. Preisänderungen gelten ab dem nächsten Verkauf.'));
+      !list.some((p) => p.name === 'Helles') && h('div', { class: 'card import' }, h('p', {}, h('b', {}, 'Salsamás-Getränkekarte übernehmen: '), 'Wasser, Coca-Cola, Schorlen, Red Bull, Helles, Wein, Sekt, Hugo, Aperol Spritz, Cuba Libre – mit euren Kartenpreisen und den Einkaufspreisen aus der METRO-Rechnung.'),
+        h('button', { class: 'btn', type: 'button', onclick: run(async () => { const r = await api('POST', '/products/import-catalog'); toast(`${r.created} Getränke übernommen`); route('artikel'); }) }, 'Karte übernehmen')),
+      h('form', { class: 'card', onsubmit: run(async () => { const c = toCents(price.value); if (c == null) throw new Error('Preis prüfen'); const k = cost.value.trim() ? toCents(cost.value) : null; if (cost.value.trim() && k == null) throw new Error('Einkaufspreis prüfen'); await api('POST', '/products', { name: name.value.trim(), priceCents: c, costCents: k, category: cat.value }); toast('Angelegt'); route('artikel'); }) },
+        h('div', { class: 'grid2' }, field('Name', name), field('Kategorie', cat), field('Verkaufspreis €', price), field('Einkaufspreis netto € (optional)', cost)), h('button', { class: 'btn', type: 'submit' }, '+ Hinzufügen')),
+      missingCost > 0 && h('p', { class: 'small muted' }, `Bei ${missingCost} Getränk${missingCost === 1 ? '' : 'en'} fehlt noch der Einkaufspreis – auf „Einkauf" tippen und nachtragen, dann stimmen Wareneinsatz und Marge.`),
+      h('h2', {}, 'Getränke · Marge pro Glas'),
+      h('div', { class: 'card table-wrap' }, drinks.length ? h('table', {}, h('tr', {}, h('th', {}, 'Getränk'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', { class: 'num' }, 'Einkauf'), h('th', { class: 'num' }, 'Marge'), h('th', { class: 'num' }, 'Marge %'), h('th', {}, '')),
+        drinks.map((p) => { const m = margin(p); return h('tr', { class: p.active ? '' : 'muted' }, h('td', {}, p.name), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
+          h('td', { class: 'num' }, h('button', { type: 'button', class: `link${p.costCents == null ? ' missing' : ''}`, onclick: editMoney(p, 'costCents', 'Einkaufspreis netto') }, p.costCents == null ? 'fehlt' : eur(p.costCents))),
+          h('td', { class: 'num' }, m ? eur(m.eur) : '–'), h('td', { class: `num ${m ? (m.pct >= 80 ? 'oktxt' : m.pct >= 70 ? 'warntxt' : 'badtxt') : 'muted'}` }, m ? `${m.pct} %` : '–'),
+          h('td', { class: 'row' }, h('button', { type: 'button', class: 'link', onclick: editMoney(p, 'priceCents', 'Neuer Preis') }, 'Preis'), h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))); })) : h('p', { class: 'muted' }, 'Noch keine Getränke.')),
+      h('h2', {}, 'Eintritt, Workshops, Kursgebühren'),
+      h('div', { class: 'card table-wrap' }, other.length ? h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', {}, '')),
+        other.map((p) => h('tr', { class: p.active ? '' : 'muted' }, h('td', {}, p.name), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
+          h('td', { class: 'row' }, h('button', { type: 'button', class: 'link', onclick: editMoney(p, 'priceCents', 'Neuer Preis') }, 'Preis'), h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))))) : h('p', { class: 'muted' }, 'Noch nichts angelegt.')),
+      h('p', { class: 'muted small' }, 'Marge = Verkaufspreis − Einkaufspreis netto (ohne Pfand). Grün ab 80 %, gelb ab 70 %. Eintritt und Workshops zählen jeden Gast, haben aber kein Inventar. Für Workshop-Teilnehmer, die zum Übungsabend bleiben, ein Ticket mit 0 € anlegen. Ausgeblendete Artikel erscheinen nicht mehr an der Kasse; Preisänderungen gelten ab dem nächsten Verkauf.'));
   }
 
   // ---------- Chef: Ziele & Kosten ----------
@@ -858,7 +890,7 @@
     const s = await api('GET', '/settings');
     const t = s.targets;
     const f = {
-      util: h('input', { type: 'number', min: 0, max: 100, value: t.utilizationPct }), open: h('input', { type: 'number', min: 0, max: 100, value: t.openPaymentsPct }),
+      util: h('input', { type: 'number', min: 0, max: 100, value: t.utilizationPct }), cogs: h('input', { type: 'number', min: 0, max: 200, value: t.costRatioPct ?? 30 }), open: h('input', { type: 'number', min: 0, max: 100, value: t.openPaymentsPct }),
       perGuest: h('input', { inputmode: 'decimal', value: fromCents(t.barPerGuestCents) }), pers: h('input', { type: 'number', min: 0, max: 200, value: t.barPersonnelPct }),
       fixM: h('input', { inputmode: 'decimal', value: fromCents(s.fixedCostsCents.maxvorstadt) }), fixP: h('input', { inputmode: 'decimal', value: fromCents(s.fixedCostsCents.pasing) }),
       mini: h('input', { inputmode: 'decimal', value: fromCents(s.minijobLimitCents) }),
@@ -866,11 +898,11 @@
     return h('form', { onsubmit: run(async () => {
       const c = [f.perGuest, f.fixM, f.fixP, f.mini].map((i) => toCents(i.value));
       if (c.some((x) => x == null)) throw new Error('Beträge prüfen');
-      await api('PUT', '/settings', { targets: { utilizationPct: Number(f.util.value), openPaymentsPct: Number(f.open.value), barPerGuestCents: c[0], barPersonnelPct: Number(f.pers.value) }, fixedCostsCents: { maxvorstadt: c[1], pasing: c[2] }, minijobLimitCents: c[3] });
+      await api('PUT', '/settings', { targets: { utilizationPct: Number(f.util.value), openPaymentsPct: Number(f.open.value), barPerGuestCents: c[0], barPersonnelPct: Number(f.pers.value), costRatioPct: Number(f.cogs.value) }, fixedCostsCents: { maxvorstadt: c[1], pasing: c[2] }, minijobLimitCents: c[3] });
       toast('Gespeichert');
     }) },
     h('h1', {}, 'Ziele & Kosten'),
-    h('div', { class: 'card' }, h('h2', {}, 'Ziele'), h('div', { class: 'grid2' }, field('Kurs-Auslastung mind. %', f.util), field('Offene Zahlungen max. %', f.open), field('Bar-Umsatz pro Gast mind. €', f.perGuest), field('Personalquote Bar max. %', f.pers))),
+    h('div', { class: 'card' }, h('h2', {}, 'Ziele'), h('div', { class: 'grid2' }, field('Kurs-Auslastung mind. %', f.util), field('Offene Zahlungen max. %', f.open), field('Bar-Umsatz pro Gast mind. €', f.perGuest), field('Personalquote Bar max. %', f.pers), field('Wareneinsatz Getränke max. %', f.cogs))),
     h('div', { class: 'card' }, h('h2', {}, 'Fixkosten pro Monat'), h('p', { class: 'muted small' }, 'Miete, Nebenkosten, Versicherungen, GEMA, Software usw. zusammengerechnet.'), h('div', { class: 'grid2' }, field('Maxvorstadt €', f.fixM), field('Pasing €', f.fixP))),
     h('div', { class: 'card' }, h('h2', {}, 'Minijob'), field('Monatsgrenze €', f.mini), h('p', { class: 'muted small' }, 'Die App warnt ab 85 % der Grenze.')),
     h('button', { class: 'btn block', type: 'submit' }, 'Speichern'));
