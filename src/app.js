@@ -3,9 +3,11 @@ const express = require('express');
 const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
 const S = require('./schemas');
+const path = require('node:path');
 const { makeAuth } = require('./auth');
+const { createTeamRouter } = require('./team');
 
-function createApp({ store, keys, allowedOrigins = [], logger = (l) => console.log(JSON.stringify(l)) }) {
+function createApp({ store, keys, sessions, allowedOrigins = [], logger = (l) => console.log(JSON.stringify(l)) }) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // Cloud Run: ein Proxy davor -> echte Client-IP fuer Rate-Limits
@@ -140,6 +142,17 @@ function createApp({ store, keys, allowedOrigins = [], logger = (l) => console.l
     })));
   }));
   app.use('/api/v1', api);
+
+  // --- Chef-/Team-App (Handy-Webseite) ---
+  if (sessions) {
+    app.use('/app/api', createTeamRouter({ store, keys, sessions, logger }));
+    // Eigene CSP fuer die Oberflaeche: nur eigene Skripte/Styles, nichts von Fremdseiten.
+    app.use('/app', (req, res, next) => {
+      res.set('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+      next();
+    }, express.static(path.join(__dirname, 'public'), { index: 'index.html', maxAge: '5m' }));
+    app.get('/', (req, res) => res.redirect('/app/'));
+  }
 
   app.use((req, res) => res.status(404).json({ error: 'not_found' }));
   // Fehler nie mit Details nach aussen geben.
