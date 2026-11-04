@@ -75,6 +75,7 @@
   let current = null;
   let timerHandle;
   function route(name, arg) {
+    applyLoc(name === 'abrechnung' && arg ? arg.location : ['kasse', 'zeit'].includes(name) ? loc : null);
     clearInterval(timerHandle);
     current = name;
     const tabs = $('#tabs');
@@ -120,7 +121,9 @@
   const seg = (options, value, onChange) => h('div', { class: 'seg' }, Object.entries(options).map(([k, l]) => h('button', { type: 'button', class: k === value ? 'active' : '', onclick: () => onChange(k) }, l)));
   const select = (options, value, attrs = {}) => h('select', attrs, Object.entries(options).map(([k, l]) => h('option', { value: k, selected: k === value }, l)));
   let loc = store.get('cockpit.loc') || 'maxvorstadt';
-  const setLoc = (l) => { loc = l; store.set('cockpit.loc', l); };
+  // Standortfarbe: Maxvorstadt = Orange, Pasing = eigene Farbe (siehe style.css, :root[data-loc])
+  const applyLoc = (l) => { if (l) document.documentElement.dataset.loc = l; else delete document.documentElement.dataset.loc; };
+  const setLoc = (l) => { loc = l; store.set('cockpit.loc', l); applyLoc(l); };
 
   // ---------- Login ----------
   function viewLogin() {
@@ -174,7 +177,7 @@
       );
     } else {
       const kind = select(KIND, store.get('cockpit.kind') || 'bar');
-      const where = select(LOC, loc);
+      const where = select(LOC, loc, { onchange: (e) => setLoc(e.target.value) });
       card.append(
         h('div', { class: 'grid2' }, field('Was machst du?', kind), field('Wo?', where)),
         h('button', { class: 'btn big block', type: 'button', onclick: run(async () => { store.set('cockpit.kind', kind.value); setLoc(where.value); await api('POST', '/shifts/start', { kind: kind.value, location: where.value }); toast('Schicht gestartet'); route('zeit'); }) }, '▶  Schicht starten'),
@@ -184,7 +187,7 @@
 
     // Nachtragen von-bis
     const kind2 = select(KIND, 'kurs');
-    const where2 = select(LOC, loc);
+    const where2 = select(LOC, loc, { onchange: (e) => applyLoc(e.target.value) });
     const start = h('input', { type: 'datetime-local', required: true, value: localInput(Date.now() - 2 * 3_600_000) });
     const end = h('input', { type: 'datetime-local', required: true, value: localInput(Date.now()) });
     root.append(h('details', { class: 'card' }, h('summary', {}, 'Arbeitszeit nachtragen (von – bis)'),
