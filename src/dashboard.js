@@ -100,7 +100,7 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
   // --- Personal ---
   const monthShifts = shifts.filter((s) => inMonth(berlinDate(s.start)));
   const personnelCost = sum(monthShifts, (s) => shiftCost(s, now));
-  const barShifts = monthShifts.filter((s) => s.kind === 'bar');
+  const barShifts = monthShifts.filter((s) => s.kind === 'bar' || s.kind === 'kombi');
   const barPersonnelCost = sum(barShifts, (s) => shiftCost(s, now));
   const barPersonnelPct = barRevenue > 0 ? (barPersonnelCost / barRevenue) * 100 : null;
   const byStaff = staff.map((p) => {
@@ -156,10 +156,10 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
     todos.push({ level: 'bad', tab: 'personal', text: `Schicht von ${s.staffRef} läuft seit ${Math.round(shiftHours(s, now))} Std. – vermutlich Ende vergessen. Bitte korrigieren.` });
   }
   for (const b of barsessions.filter((x) => !x.closedAt && x.date < today)) {
-    todos.push({ level: 'bad', tab: 'bar', text: `${b.station === 'tuer' ? 'Tür' : 'Theken'}-Kasse vom ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}) wurde nicht abgeschlossen.` });
+    todos.push({ level: 'bad', tab: 'bar', text: `${b.station === 'tuer' ? 'Tür' : b.station === 'kombi' ? 'Kombi' : 'Theken'}-Kasse vom ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}) wurde nicht abgeschlossen.` });
   }
   for (const b of closed.filter((x) => Math.abs(x.cashDiffCents || 0) > 500)) {
-    todos.push({ level: Math.abs(b.cashDiffCents) > 2000 ? 'bad' : 'warn', tab: 'bar', text: `Kassendifferenz ${eur(b.cashDiffCents)} an der ${b.station === 'tuer' ? 'Tür' : 'Theke'} am ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}) klären.` });
+    todos.push({ level: Math.abs(b.cashDiffCents) > 2000 ? 'bad' : 'warn', tab: 'bar', text: `Kassendifferenz ${eur(b.cashDiffCents)} an der ${b.station === 'tuer' ? 'Tür' : b.station === 'kombi' ? 'Kombi-Kasse' : 'Theke'} am ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}) klären.` });
   }
   const withMissing = closed.filter((x) => x.missingUnits > 0);
   if (withMissing.length > 3) {
@@ -170,7 +170,7 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
   }
   const barDays = new Set(barsessions.map((b) => `${b.date}_${b.location}`));
   const missing = new Set();
-  for (const s of shifts.filter((x) => x.kind === 'bar' && x.end)) {
+  for (const s of shifts.filter((x) => (x.kind === 'bar' || x.kind === 'kombi') && x.end)) {
     const d = berlinDate(s.start);
     if (d < today && inMonth(d) && !barDays.has(`${d}_${s.location}`)) missing.add(`${d}_${s.location}`);
   }

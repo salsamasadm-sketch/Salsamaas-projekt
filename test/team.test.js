@@ -218,3 +218,16 @@ test('Aushilfen beim Kassenabschluss: Viertelstunde aufrunden, bar mindert Kasse
   assert.ok(!d2.todos.some((t) => /Jonas/.test(t.text)));
   s.close();
 });
+
+test('Kombi-Kasse (Tuer + Theke): eine Person kassiert Eintritt und Getraenke', async () => {
+  const s = await start();
+  const { lena, cola, entry } = await setup(s);
+  await s.call('POST', '/app/api/shifts/start', { token: lena, body: { kind: 'kombi', location: 'maxvorstadt' } });
+  const cur = (await s.call('GET', '/app/api/bar/current?location=pasing&station=tuer', { token: lena })).body;
+  assert.deepEqual([cur.location, cur.station], ['maxvorstadt', 'kombi']);
+  const ses = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'maxvorstadt', station: 'kombi', cashStartCents: 5000, stockStart: { [cola.id]: 10 } } })).body;
+  assert.equal((await s.call('POST', `/app/api/bar/${ses.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: entry.id, qty: 2 }, { productId: cola.id, qty: 1 }] } })).status, 201);
+  const r = (await s.call('POST', `/app/api/bar/${ses.id}/close`, { token: lena, body: { cashEndCents: 5000 + 1600 + 350, stockEnd: { [cola.id]: 9 } } })).body;
+  assert.deepEqual([r.station, r.guests, r.ticketRevenueCents, r.drinksRevenueCents, r.cashDiffCents, r.missingUnits], ['kombi', 2, 1600, 350, 0, 0]);
+  s.close();
+});

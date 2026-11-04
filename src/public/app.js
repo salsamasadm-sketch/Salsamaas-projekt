@@ -3,15 +3,15 @@
 (() => {
   const $ = (s) => document.querySelector(s);
   const LOC = { maxvorstadt: 'Maxvorstadt', pasing: 'Pasing' };
-  const KIND = { bar: 'Bar / Theke', kurs: 'Unterricht', empfang: 'Empfang / Tür', sonstiges: 'Sonstiges' };
+  const KIND = { bar: 'Bar / Theke', empfang: 'Empfang / Tür', kombi: 'Tür + Theke (alles)', kurs: 'Unterricht', sonstiges: 'Sonstiges' };
   const TICKET = ['eintritt', 'workshop', 'kursgebuehr']; // ohne Inventar
   const FEE = 'kursgebuehr';
   // Kassenplaetze: Tuer = nur Eintritt/Workshops (ohne Inventar), Theke = Getraenke + Kursgebuehren (mit Inventar)
-  const STATION = { tuer: 'Tür · Eintritt', theke: 'Theke · Bar' };
-  const STATION_SHORT = { tuer: 'Tür', theke: 'Theke' };
-  const STATION_KASSE = { tuer: 'Tür-Kasse', theke: 'Theken-Kasse' };
+  const STATION = { tuer: 'Tür · Eintritt', theke: 'Theke · Bar', kombi: 'Tür + Theke' };
+  const STATION_SHORT = { tuer: 'Tür', theke: 'Theke', kombi: 'Kombi' };
+  const STATION_KASSE = { tuer: 'Tür-Kasse', theke: 'Theken-Kasse', kombi: 'Kombi-Kasse (Tür + Theke)' };
   const DOOR_CATS = ['eintritt', 'workshop'];
-  const allowedAt = (st, cat) => (st === 'tuer' ? DOOR_CATS.includes(cat) : !DOOR_CATS.includes(cat));
+  const allowedAt = (st, cat) => (st === 'kombi' ? true : st === 'tuer' ? DOOR_CATS.includes(cat) : !DOOR_CATS.includes(cat));
   const CAT = { eintritt: 'Eintritt', workshop: 'Workshops', kursgebuehr: 'Kursgebühren', softdrinks: 'Softdrinks', bier: 'Bier', wein: 'Wein & Sekt', cocktails: 'Cocktails', longdrinks: 'Longdrinks', shots: 'Shots', heiss: 'Heißgetränke', snacks: 'Snacks', sonstiges: 'Sonstiges' };
   const PAY = { bar: 'Bar', karte: 'Karte', gratis: 'Gratis/Personal' };
 

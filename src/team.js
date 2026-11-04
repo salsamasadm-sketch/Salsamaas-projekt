@@ -6,7 +6,7 @@ const { rateLimit } = require('express-rate-limit');
 const { hashPin, verifyPin } = require('./session');
 const { sha256 } = require('./auth');
 const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = require('./dashboard');
-const { computeSettlement, buildHelpers, helperShift, STATIONS, stationOf, allowedAtStation } = require('./bar');
+const { computeSettlement, buildHelpers, helperShift, STATIONS, stationOf, allowedAtStation, stationForKind } = require('./bar');
 const S = require('./schemas');
 
 /**
@@ -17,7 +17,7 @@ const S = require('./schemas');
  * - Chef: Anmeldung mit dem bestehenden write-API-Schluessel, sieht Dashboard und verwaltet alles.
  */
 const LOC = z.enum(S.LOCATIONS);
-const KIND = z.enum(['bar', 'kurs', 'empfang', 'sonstiges']);
+const KIND = z.enum(['bar', 'kurs', 'empfang', 'kombi', 'sonstiges']);
 const ref = z.string().regex(/^[A-Za-z0-9_.-]{2,30}$/, 'Kürzel: 2–30 Zeichen, nur Buchstaben/Zahlen');
 const pin = z.string().regex(/^\d{6,8}$/, 'PIN: 6–8 Ziffern');
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((d) => !Number.isNaN(Date.parse(d)), 'ungültiges Datum');
@@ -183,7 +183,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     if (req.session.role === 'owner') return { owner: true };
     const shift = (await store.listDocs('shifts')).find((x) => x.staffRef === req.staff.ref && !x.end && !x.helper);
     if (!shift) { res.status(403).json({ error: 'no_shift' }); return null; }
-    return { location: shift.location, station: shift.kind === 'empfang' ? 'tuer' : 'theke' };
+    return { location: shift.location, station: stationForKind(shift.kind) };
   };
   const inScope = (scope, ses) => scope.owner || (ses.location === scope.location && stationOf(ses) === scope.station);
   const activeSales = async (sessionId) => (await store.listDocs('sales')).filter((x) => x.sessionId === sessionId && !x.voided);
@@ -325,7 +325,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     if (req.params.kind === 'abende') {
       const list = (await Promise.all((await store.listDocs('barsessions')).filter((b) => inR(range, b.date)).map(settlement))).sort((a, b) => a.date.localeCompare(b.date));
       rows = [['Datum', 'Standort', 'Kassenplatz', 'Gäste', 'Eintritt+Workshops', 'Getränke', 'Umsatz gesamt', 'davon bar', 'davon Karte', 'Kasse Anfang', 'Entnahmen', 'Kasse Soll', 'Kasse gezählt', 'Kassendifferenz', 'Fehlmenge Stück', 'Storno', 'geöffnet von', 'geschlossen von', 'Notiz'],
-        ...list.map((s) => [s.date, s.location, s.station === 'tuer' ? 'Tür' : 'Theke', s.guests ?? '', money(s.ticketRevenueCents), money(s.drinksRevenueCents), money(s.revenueCents), money(s.cashSalesCents), money(s.cardSalesCents), money(s.cashStartCents), money(s.cashOutCents), money(s.cashExpectedCents), money(s.cashCountedCents), money(s.cashDiffCents), s.missingUnits, s.voidedCount, s.openedBy, s.closedBy || 'offen', s.note || ''])];
+        ...list.map((s) => [s.date, s.location, s.station === 'tuer' ? 'Tür' : s.station === 'kombi' ? 'Tür + Theke' : 'Theke', s.guests ?? '', money(s.ticketRevenueCents), money(s.drinksRevenueCents), money(s.revenueCents), money(s.cashSalesCents), money(s.cardSalesCents), money(s.cashStartCents), money(s.cashOutCents), money(s.cashExpectedCents), money(s.cashCountedCents), money(s.cashDiffCents), s.missingUnits, s.voidedCount, s.openedBy, s.closedBy || 'offen', s.note || ''])];
     } else {
       const list = (await store.listDocs('shifts')).filter((s) => inR(range, berlinDate(s.start))).sort((a, b) => a.staffRef.localeCompare(b.staffRef) || a.start.localeCompare(b.start));
       const t = (iso) => new Date(iso).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' });

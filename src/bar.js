@@ -14,7 +14,7 @@ function buildHelpers(session, input = [], newId) {
   });
 }
 /** Aus einer Aushilfe wird eine Schicht (damit sie in Personalkosten und Export auftaucht). */
-const helperShift = (session, hl) => ({ id: hl.id, staffRef: hl.name, helper: true, kind: session.station === 'tuer' ? 'empfang' : 'bar', location: session.location, start: hl.start, end: hl.end, rateCents: hl.rateCents, payout: hl.payout, paid: hl.payout === 'bar', sessionId: session.id, createdBy: 'kasse' });
+const helperShift = (session, hl) => ({ id: hl.id, staffRef: hl.name, helper: true, kind: session.station === 'tuer' ? 'empfang' : session.station === 'kombi' ? 'kombi' : 'bar', location: session.location, start: hl.start, end: hl.end, rateCents: hl.rateCents, payout: hl.payout, paid: hl.payout === 'bar', sessionId: session.id, createdBy: 'kasse' });
 
 /** Kategorien ohne Inventar: Eintritt und Workshops (zaehlen als Gaeste). */
 const TICKET_CATEGORIES = ['eintritt', 'workshop'];
@@ -83,7 +83,7 @@ function computeSettlement(session, sales, products = []) {
   const cashCounted = session.cashEndCents ?? null;
   const missingUnits = items.reduce((a, i) => a + (i.diff != null && i.diff < 0 ? -i.diff : 0), 0);
   return {
-    sessionId: session.id, date: session.date, location: session.location, station: session.station === 'tuer' ? 'tuer' : 'theke', status: session.closedAt ? 'closed' : 'open',
+    sessionId: session.id, date: session.date, location: session.location, station: stationOf(session), status: session.closedAt ? 'closed' : 'open',
     salesCount: count, revenueCents: cash + card, cashSalesCents: cash, cardSalesCents: card,
     drinksRevenueCents: cash + card - ticketRev - courseRev, ticketRevenueCents: ticketRev, ticketCount,
     courseFeeCents: courseRev, courseFees: [...fees.values()].sort((a, b) => b.revenueCents - a.revenueCents),
@@ -102,8 +102,11 @@ function computeSettlement(session, sales, products = []) {
  * Kassenplaetze: Tuer (Eingang) kassiert nur Eintritt und Workshops, ohne Inventar.
  * Theke (Bar) verkauft Getraenke und Kursgebuehren, mit Inventar.
  */
-const STATIONS = ['tuer', 'theke'];
-const stationOf = (session) => (session.station === 'tuer' ? 'tuer' : 'theke');
-const allowedAtStation = (station, category) => (station === 'tuer' ? TICKET_CATEGORIES.includes(category) : !TICKET_CATEGORIES.includes(category));
+const STATIONS = ['tuer', 'theke', 'kombi'];
+const stationOf = (session) => (STATIONS.includes(session.station) ? session.station : 'theke');
+/** Kombi = eine Person macht Tuer und Theke: alles erlaubt, mit Inventar. */
+const allowedAtStation = (station, category) => (station === 'kombi' ? true : station === 'tuer' ? TICKET_CATEGORIES.includes(category) : !TICKET_CATEGORIES.includes(category));
+/** Kassenplatz aus der Taetigkeit der Schicht */
+const stationForKind = (kind) => (kind === 'empfang' ? 'tuer' : kind === 'kombi' ? 'kombi' : 'theke');
 
-module.exports = { computeSettlement, billedHours, buildHelpers, helperShift, TICKET_CATEGORIES, COURSE_CATEGORIES, STATIONS, stationOf, allowedAtStation };
+module.exports = { computeSettlement, billedHours, buildHelpers, helperShift, TICKET_CATEGORIES, COURSE_CATEGORIES, STATIONS, stationOf, allowedAtStation, stationForKind };
