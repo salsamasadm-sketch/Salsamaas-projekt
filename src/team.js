@@ -429,7 +429,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     let n = 0;
     for (const [i, c] of CATALOG.entries()) {
       if (existing.has(c.name.toLowerCase())) continue;
-      await store.putDoc('products', { id: crypto.randomUUID(), name: c.name, priceCents: c.priceCents, costCents: c.costCents, category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date().toISOString() }); n++;
+      await store.putDoc('products', { id: crypto.randomUUID(), name: c.name, priceCents: c.priceCents, costCents: c.costCents, ...(c.source && { source: c.source }), category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date().toISOString() }); n++;
     }
     log(req, 'catalog_imported'); res.json({ created: n });
   }));

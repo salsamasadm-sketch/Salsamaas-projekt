@@ -35,7 +35,7 @@ async function seedInto(store) {
   for (const p of tickets) await store.putDoc('products', p);
   // Echte Salsamas-Getraenkekarte mit Einkaufspreisen aus der METRO-Rechnung
   const { CATALOG } = require('../src/catalog');
-  const products = CATALOG.map((c, i) => ({ id: `p${i + 1}`, name: c.name, priceCents: c.priceCents, costCents: c.costCents, category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date(now).toISOString() }));
+  const products = CATALOG.map((c, i) => ({ id: `p${i + 1}`, name: c.name, priceCents: c.priceCents, costCents: c.costCents, source: c.source, category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date(now).toISOString() }));
   for (const p of products) await store.putDoc('products', p);
 
   // Beschaeftigungsart: Minijob (Bar/Tuer) oder auf Rechnung (Trainer)
@@ -116,6 +116,8 @@ async function seedInto(store) {
   const helperDays = [12, 5].map((d) => new Date(now - d * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }));
   await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: 'Carla', helper: true, kind: 'bar', location: 'maxvorstadt', start: new Date(`${helperDays[0]}T20:30:00+01:00`).toISOString(), end: new Date(`${helperDays[0]}T23:45:00+01:00`).toISOString(), rateCents: 1390, payout: 'bar', paid: true, createdBy: 'kasse' });
   await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: 'Jonas', helper: true, kind: 'empfang', location: 'pasing', start: new Date(`${helperDays[1]}T19:45:00+01:00`).toISOString(), end: new Date(`${helperDays[1]}T22:50:00+01:00`).toISOString(), rateCents: 1500, payout: 'ueberweisung', paid: false, createdBy: 'kasse' });
+  // Einkauf: METRO-Rechnung vom 23.10.2026 (bar bezahlt)
+  await store.putDoc('purchases', { id: crypto.randomUUID(), date: '2026-10-23', supplier: 'METRO München-Pasing', totalCents: 47434, depositCents: 7497, location: 'maxvorstadt', note: 'Cola, Fanta, Red Bull, Adelholzener, Sekt, Hugo, Aperol, Havana Club, Limetten, Zewa/Toilettenpapier (16,48 € Betriebsbedarf) – bar bezahlt' });
   // Einkauf: METRO-Rechnung vom 31.10.2026 (Brutto inkl. Pfand)
   await store.putDoc('purchases', { id: crypto.randomUUID(), date: '2026-10-31', supplier: 'METRO München-Pasing', totalCents: 34738, depositCents: 8378, location: 'pasing', note: 'Augustiner, Cola, Red Bull, Adelholzener, Aperol Spritz, Eventbänder' });
   // Wochenplan: Vorwoche, diese Woche, naechste Woche (diese Woche mit absichtlichem Konflikt und offenem Einsatz)
