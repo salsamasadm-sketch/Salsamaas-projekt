@@ -1,0 +1,158 @@
+'use strict';
+/*
+ * Demo-Modus: beantwortet /app/api/* direkt im Browser mit Beispieldaten (kein Server).
+ * Nutzt dieselbe Rechenlogik wie der echte Server (computeDashboard, computeSettlement).
+ * Wird nur von scripts/build-demo.js in die Demo-Seite eingebaut.
+ */
+(() => {
+  const { computeDashboard, mergeSettings, berlinDate } = window.__cockpit.dashboard;
+  const { computeSettlement } = window.__cockpit.bar;
+  const KEY = 'cockpit.demo.db.v1';
+  const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
+  let db;
+  try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { /* privat */ } };
+  window.__cockpit.resetDemo = () => { db = fresh(); save(); try { localStorage.removeItem('cockpit.auth'); } catch { /* */ } location.reload(); };
+
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+  const list = (c) => Object.values(db[c]);
+  const today = () => berlinDate(new Date());
+  const json = (status, body) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  const err = (status, error, details) => json(status, { error, ...(details && { details: [{ path: '', message: details }] }) });
+  const tokenOf = (o) => btoa(unescape(encodeURIComponent(JSON.stringify(o))));
+  const readToken = (h) => { try { return JSON.parse(decodeURIComponent(escape(atob(String(h || '').replace(/^Bearer /, ''))))); } catch { return null; } };
+  const enrollments = () => list('enrollments');
+  const activeSales = (sid) => list('sales').filter((x) => x.sessionId === sid && !x.voided);
+  const settle = (ses) => {
+    const all = list('sales').filter((x) => x.sessionId === ses.id);
+    return { ...computeSettlement(ses, all.filter((x) => !x.voided), list('products')), voidedCount: all.filter((x) => x.voided).length, openedBy: ses.openedBy, closedBy: ses.closedBy || null, openedAt: ses.openedAt, closedAt: ses.closedAt || null, note: ses.note || null };
+  };
+  const publicStaff = ({ pinHash, ...p }) => p;
+
+  function handle(method, path, query, body, auth) {
+    if (method === 'POST' && path === '/login') {
+      if ('apiKey' in body) return body.apiKey.trim().length >= 8 ? json(200, { token: tokenOf({ role: 'owner', sub: 'chef' }), role: 'owner', ref: 'chef' }) : err(401, 'unauthorized');
+      const p = db.staff[String(body.ref || '').toLowerCase()];
+      if (!p || p.active === false || body.pin !== '123456') return err(401, 'unauthorized');
+      return json(200, { token: tokenOf({ role: 'staff', sub: p.id }), role: 'staff', ref: p.ref });
+    }
+    if (!auth) return err(401, 'unauthorized');
+    const owner = auth.role === 'owner';
+    const staff = owner ? null : db.staff[auth.sub];
+    if (!owner && (!staff || staff.active === false)) return err(401, 'unauthorized');
+    const by = owner ? 'chef' : staff.ref;
+    const only = () => (owner ? null : err(403, 'forbidden'));
+    let m;
+
+    if (method === 'GET' && path === '/me') {
+      if (owner) return json(200, { role: 'owner', ref: 'chef' });
+      const mine = list('shifts').filter((s) => s.staffRef === staff.ref);
+      const month = today().slice(0, 7);
+      const hours = mine.filter((s) => berlinDate(s.start).slice(0, 7) === month).reduce((a, s) => a + ((s.end ? new Date(s.end) : new Date()) - new Date(s.start)) / 3_600_000, 0);
+      return json(200, { role: 'staff', ref: staff.ref, openShift: mine.find((s) => !s.end) || null, monthHours: Math.round(hours * 10) / 10, recent: mine.sort((a, b) => b.start.localeCompare(a.start)).slice(0, 10) });
+    }
+    if (method === 'POST' && path === '/shifts/start') {
+      if (!staff) return err(403, 'forbidden');
+      if (list('shifts').some((s) => s.staffRef === staff.ref && !s.end)) return err(409, 'shift_running');
+      const s = { id: uid(), staffRef: staff.ref, kind: body.kind, location: body.location, start: new Date().toISOString(), end: null, rateCents: staff.hourlyRateCents };
+      db.shifts[s.id] = s; save(); return json(201, s);
+    }
+    if (method === 'POST' && path === '/shifts/stop') {
+      if (!staff) return err(403, 'forbidden');
+      const s = list('shifts').find((x) => x.staffRef === staff.ref && !x.end);
+      if (!s) return err(409, 'no_shift_running');
+      s.end = new Date().toISOString(); save(); return json(200, s);
+    }
+    if (method === 'POST' && path === '/shifts/own') {
+      if (!staff) return err(403, 'forbidden');
+      const a = new Date(body.start), b = new Date(body.end);
+      if (!(b > a) || b - a > 16 * 3_600_000) return err(400, 'validation_failed', 'Ende muss nach Start liegen (max. 16 Std.)');
+      if ((Date.now() - a) / 86_400_000 > 3 || b > new Date(Date.now() + 600_000)) return err(400, 'validation_failed', 'nur die letzten 3 Tage, nicht in der Zukunft');
+      if (list('shifts').some((s) => s.staffRef === staff.ref && new Date(s.start) < b && new Date(s.end || Date.now()) > a)) return err(409, 'overlap');
+      const s = { id: uid(), staffRef: staff.ref, kind: body.kind, location: body.location, start: a.toISOString(), end: b.toISOString(), rateCents: staff.hourlyRateCents };
+      db.shifts[s.id] = s; save(); return json(201, s);
+    }
+    if (method === 'GET' && path === '/products') return json(200, list('products').filter((p) => owner || p.active !== false).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)));
+    if (method === 'GET' && path === '/bar/current') {
+      const ss = list('barsessions').filter((b) => b.location === query.get('location'));
+      const open = ss.find((b) => !b.closedAt) || null;
+      const last = ss.filter((b) => b.closedAt).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0];
+      return json(200, { session: open, settlement: open ? settle(open) : null, lastStock: last?.stockEnd || {} });
+    }
+    if (method === 'POST' && path === '/bar/open') {
+      if (list('barsessions').some((b) => b.location === body.location && !b.closedAt)) return err(409, 'session_open');
+      const ses = { id: uid(), date: today(), ...body, openedBy: by, openedAt: new Date().toISOString(), closedAt: null };
+      db.barsessions[ses.id] = ses; save(); return json(201, ses);
+    }
+    if ((m = path.match(/^\/bar\/([^/]+)\/sales$/))) {
+      const ses = db.barsessions[m[1]]; if (!ses) return err(404, 'not_found');
+      if (method === 'GET') return json(200, list('sales').filter((x) => x.sessionId === ses.id).sort((a, b) => b.at.localeCompare(a.at)));
+      if (ses.closedAt) return err(409, 'session_closed');
+      const items = body.items.map((it) => ({ productId: it.productId, qty: it.qty, priceCents: db.products[it.productId].priceCents }));
+      const sale = { id: uid(), sessionId: ses.id, at: new Date().toISOString(), by, payment: body.payment, items };
+      db.sales[sale.id] = sale; save(); return json(201, { id: sale.id });
+    }
+    if (method === 'DELETE' && (m = path.match(/^\/bar\/([^/]+)\/sales\/([^/]+)$/))) {
+      const sale = db.sales[m[2]]; if (!sale || sale.voided) return err(404, 'not_found');
+      Object.assign(sale, { voided: true, voidedBy: by, voidedAt: new Date().toISOString() }); save(); return json(204);
+    }
+    if (method === 'POST' && (m = path.match(/^\/bar\/([^/]+)\/close$/))) {
+      const ses = db.barsessions[m[1]]; if (!ses) return err(404, 'not_found');
+      if (ses.closedAt) return err(409, 'session_closed');
+      Object.assign(ses, { cashOutCents: 0, restock: {}, ...body, closedBy: by, closedAt: new Date().toISOString() }); save();
+      return json(200, settle(ses));
+    }
+    if (method === 'GET' && (m = path.match(/^\/bar\/sessions\/([^/]+)$/))) return db.barsessions[m[1]] ? json(200, settle(db.barsessions[m[1]])) : err(404, 'not_found');
+
+    // --- nur Chef ---
+    const deny = only(); if (deny) return deny;
+    const month = /^\d{4}-\d{2}$/.test(query.get('month') || '') ? query.get('month') : null;
+    if (method === 'GET' && path === '/dashboard') {
+      return json(200, computeDashboard({ month: month || today().slice(0, 7), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main }));
+    }
+    if (method === 'GET' && path === '/bar/sessions') return json(200, list('barsessions').filter((b) => !month || b.date.startsWith(month)).map(settle).sort((a, b) => b.date.localeCompare(a.date)));
+    if (method === 'GET' && path === '/staff') return json(200, list('staff').map(publicStaff).sort((a, b) => a.ref.localeCompare(b.ref)));
+    if (method === 'POST' && path === '/staff') {
+      const id = String(body.ref).toLowerCase();
+      if (!/^[a-z0-9_.-]{2,30}$/.test(id)) return err(400, 'validation_failed', 'Kürzel: 2–30 Zeichen, nur Buchstaben/Zahlen');
+      if (db.staff[id]) return err(409, 'already_exists');
+      db.staff[id] = { id, ref: body.ref, hourlyRateCents: body.hourlyRateCents, active: true }; save(); return json(201, db.staff[id]);
+    }
+    if (method === 'PATCH' && (m = path.match(/^\/staff\/([^/]+)$/))) {
+      const p = db.staff[m[1]]; if (!p) return err(404, 'not_found');
+      const { pin, ...rest } = body;
+      if (pin !== undefined && !/^\d{6,8}$/.test(pin)) return err(400, 'validation_failed', 'PIN: 6–8 Ziffern');
+      Object.assign(p, rest); save(); return json(200, publicStaff(p));
+    }
+    if (method === 'GET' && path === '/shifts') return json(200, list('shifts').filter((s) => !month || berlinDate(s.start).startsWith(month)).sort((a, b) => b.start.localeCompare(a.start)));
+    if (method === 'POST' && path === '/shifts') {
+      const p = db.staff[String(body.staffRef).toLowerCase()]; if (!p) return err(404, 'not_found');
+      const s = { id: uid(), ...body, staffRef: p.ref, start: new Date(body.start).toISOString(), end: new Date(body.end).toISOString(), rateCents: p.hourlyRateCents };
+      if (!(new Date(s.end) > new Date(s.start))) return err(400, 'validation_failed', 'Ende muss nach Start liegen');
+      db.shifts[s.id] = s; save(); return json(201, s);
+    }
+    if (method === 'DELETE' && (m = path.match(/^\/shifts\/([^/]+)$/))) { if (!db.shifts[m[1]]) return err(404, 'not_found'); delete db.shifts[m[1]]; save(); return json(204); }
+    if (method === 'GET' && path === '/settings') return json(200, mergeSettings(db.settings.main));
+    if (method === 'PUT' && path === '/settings') { db.settings.main = { id: 'main', ...body }; save(); return json(200, mergeSettings(body)); }
+    if (method === 'POST' && path === '/products') {
+      const p = { id: uid(), active: true, sort: 100, ...body }; db.products[p.id] = p; save(); return json(201, p);
+    }
+    if (method === 'PATCH' && (m = path.match(/^\/products\/([^/]+)$/))) {
+      const p = db.products[m[1]]; if (!p) return err(404, 'not_found'); Object.assign(p, body); save(); return json(200, p);
+    }
+    return err(404, 'not_found');
+  }
+
+  const realFetch = window.fetch.bind(window);
+  window.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+    const i = url.pathname.indexOf('/app/api');
+    if (i < 0) return realFetch(input, init);
+    const path = url.pathname.slice(i + '/app/api'.length);
+    const headers = new Headers(init.headers || {});
+    let body = {};
+    try { body = init.body ? JSON.parse(init.body) : {}; } catch { return err(400, 'invalid_json'); }
+    await new Promise((r) => setTimeout(r, 60));
+    try { return handle((init.method || 'GET').toUpperCase(), path, url.searchParams, body, readToken(headers.get('Authorization'))); } catch (e) { console.error(e); return err(500, 'internal_error'); }
+  };
+})();

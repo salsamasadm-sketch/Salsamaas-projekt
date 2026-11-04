@@ -13,9 +13,9 @@ const { parseKeys, sha256 } = require('../src/auth');
 const { makeSessions, hashPin } = require('../src/session');
 
 const file = path.join(__dirname, '..', 'data', 'demo-db.json');
-if (process.argv.includes('--reset') && fs.existsSync(file)) fs.rmSync(file);
+if (require.main === module && process.argv.includes('--reset') && fs.existsSync(file)) fs.rmSync(file);
 const fresh = !fs.existsSync(file);
-const store = new FileStore(file);
+const store = require.main === module ? new FileStore(file) : null;
 
 // Fester Demo-Schluessel, damit Screenshots/Tests reproduzierbar sind. NIE produktiv verwenden.
 const OWNER_KEY = process.env.DEMO_KEY || 'demo-chef-schluessel-nur-zum-testen-123';
@@ -24,7 +24,8 @@ const keys = parseKeys(`chef:write:${sha256(OWNER_KEY).toString('hex')}`);
 const rnd = (() => { let s = 42; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 const pick = (a) => a[Math.floor(rnd() * a.length)];
 
-async function seed() {
+async function seed() { return seedInto(store); }
+async function seedInto(store) {
   const now = Date.now();
   const tickets = [['Eintritt Übungsabend', 800, 'eintritt'], ['Workshop + Party', 2500, 'workshop'], ['Workshop-Teilnehmer inkl.', 0, 'eintritt']]
     .map(([name, priceCents, category], i) => ({ id: `t${i + 1}`, name, priceCents, category, active: true, sort: i, createdAt: new Date(now).toISOString() }));
@@ -58,7 +59,7 @@ async function seed() {
   // Bar-Abende der letzten ~4 Wochen: Mi (Pasing), Fr + Sa (Maxvorstadt)
   let stock = Object.fromEntries(products.map((p) => [p.id, 40]));
   const stockByLoc = { maxvorstadt: { ...stock }, pasing: { ...stock } };
-  for (let d = 27; d >= 1; d--) {
+  for (let d = 45; d >= 1; d--) {
     const day = new Date(now - d * 86_400_000);
     const wd = day.getDay();
     const location = wd === 3 ? 'pasing' : wd === 5 || wd === 6 ? 'maxvorstadt' : null;
@@ -101,7 +102,7 @@ async function seed() {
     }
   }
   // Unterricht (Tanzlehrer diego)
-  for (let d = 27; d >= 1; d--) {
+  for (let d = 45; d >= 1; d--) {
     const day = new Date(now - d * 86_400_000);
     if (![1, 3].includes(day.getDay())) continue;
     const date = day.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
@@ -109,7 +110,9 @@ async function seed() {
   }
 }
 
-(async () => {
+module.exports = { seed: seedInto };
+
+if (require.main === module) (async () => {
   if (fresh) { await seed(); console.log('Beispieldaten angelegt.'); }
   const app = createApp({ store, keys, sessions: makeSessions(crypto.randomBytes(32).toString('hex')), logger: () => {} });
   const port = Number(process.env.PORT) || 8080;

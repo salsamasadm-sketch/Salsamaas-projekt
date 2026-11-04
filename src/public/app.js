@@ -37,6 +37,19 @@
     const t = $('#toast'); t.textContent = msg; t.className = `toast${err ? ' err' : ''}`;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 2600);
   }
+  // Rueckfrage/Eingabe direkt in der Seite (statt confirm/prompt, die in manchen App-Ansichten blockiert sind)
+  function ask(message, input) {
+    return new Promise((resolve) => {
+      const field = input && h('input', { id: 'ask-input', value: input.value ?? '', inputmode: input.inputmode || 'text', autocomplete: 'off' });
+      const close = (v) => { box.remove(); resolve(v); };
+      const box = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' },
+        h('form', { class: 'modal-card', onsubmit: (e) => { e.preventDefault(); close(field ? field.value : true); } },
+          h('p', {}, message), field,
+          h('div', { class: 'row' }, h('button', { class: 'btn', type: 'submit' }, field ? 'Speichern' : 'Ja'), h('button', { class: 'btn secondary', type: 'button', onclick: () => close(field ? null : false) }, 'Abbrechen'))));
+      document.body.append(box);
+      (field || box.querySelector('button')).focus();
+    });
+  }
   const ERR = { unauthorized: 'Anmeldung fehlgeschlagen', too_many_requests: 'Zu viele Versuche – bitte 15 Min. warten', shift_running: 'Es läuft schon eine Schicht', no_shift_running: 'Keine Schicht aktiv', session_open: 'An diesem Standort ist schon eine Kasse offen', session_closed: 'Kasse ist schon geschlossen', overlap: 'Überschneidet sich mit einer anderen Schicht', already_exists: 'Kürzel gibt es schon', forbidden: 'Keine Berechtigung' };
 
   // ---------- API ----------
@@ -101,6 +114,11 @@
         mode === 'team' ? [field('Kürzel', ref), field('PIN', pin)] : field('Schlüssel (write)', key),
         h('button', { class: 'btn block', type: 'submit' }, 'Anmelden')),
         h('p', { class: 'muted small' }, mode === 'team' ? 'Kürzel und PIN bekommst du von Pablo.' : 'Den Chef-Schlüssel im Passwort-Manager speichern.'),
+        window.COCKPIT_DEMO && h('div', { class: 'demo-login' },
+          h('p', { class: 'small' }, h('b', {}, 'Demo: '), 'Einfach eine Rolle antippen.'),
+          h('div', { class: 'row' },
+            h('button', { class: 'btn', type: 'button', onclick: run(async () => { const r = await api('POST', '/login', { apiKey: 'demo-chef' }); auth = r; store.set('cockpit.auth', JSON.stringify(r)); route('heute'); }) }, 'Als Chef ansehen'),
+            h('button', { class: 'btn secondary', type: 'button', onclick: run(async () => { const r = await api('POST', '/login', { ref: 'sofia', pin: '123456' }); auth = r; store.set('cockpit.auth', JSON.stringify(r)); route('zeit'); }) }, 'Als Team (Sofia)'))),
       );
     };
     render();
@@ -225,7 +243,7 @@
         list.length ? h('ul', { class: 'list' }, list.slice(0, 8).map((s) => {
           const sum = s.payment === 'gratis' ? 0 : s.items.reduce((a, i) => a + i.qty * i.priceCents, 0);
           return h('li', { class: s.voided ? 'info' : '' }, h('span', {}, h('span', { class: 'muted small' }, `${time(s.at)} · ${s.by} · ${PAY[s.payment]}`), h('br'), `${s.items.map((i) => `${i.qty}× ${priceOf.get(i.productId)?.name || '?'}`).join(', ')} – ${s.voided ? 'storniert' : eur(sum)}`),
-            !s.voided && h('button', { type: 'button', class: 'ghost', onclick: run(async () => { if (!confirm('Diese Buchung stornieren?')) return; await api('DELETE', `/bar/${ses.id}/sales/${s.id}`); toast('Storniert'); await refresh(); }) }, 'Storno'));
+            !s.voided && h('button', { type: 'button', class: 'ghost', onclick: run(async () => { if (!await ask('Diese Buchung stornieren?')) return; await api('DELETE', `/bar/${ses.id}/sales/${s.id}`); toast('Storniert'); await refresh(); }) }, 'Storno'));
         })) : h('p', { class: 'muted small' }, 'Noch nichts verkauft.'));
     };
     const refresh = async () => { set = (await api('GET', `/bar/current?location=${ses.location}`)).settlement; renderHead(); renderCart(); await renderRecent(); };
@@ -255,7 +273,7 @@
     return h('form', { class: 'card', onsubmit: run(async () => {
       const c = toCents(cash.value); const o = toCents(out.value);
       if (c == null || o == null) throw new Error('Beträge prüfen');
-      if (!confirm('Kasse jetzt schließen? Danach kann nichts mehr gebucht werden.')) return;
+      if (!await ask('Kasse jetzt schließen? Danach kann nichts mehr gebucht werden.')) return;
       const result = await api('POST', `/bar/${ses.id}/close`, { cashEndCents: c, cashOutCents: o, stockEnd: end.read(), restock: restock.read(), ...(guests.value && { guests: Number(guests.value) }), ...(note.value.trim() && { note: note.value.trim() }) });
       toast('Kasse abgeschlossen');
       route('abrechnung', result);
@@ -306,7 +324,7 @@
   }
   const fmtKpi = (k) => (k.value == null ? '–' : k.unit === 'eur' ? eur(Math.round(k.value)) : k.unit === 'pct' ? `${Math.round(k.value)} %` : String(k.value));
   const fmtTarget = (k) => (k.target == null ? null : `Ziel ${k.unit === 'eur' ? eur(k.target) : `${k.target} %`}`);
-  let month = thisMonth();
+  let month = window.COCKPIT_DEFAULT_MONTH || thisMonth();
   const monthPicker = (onChange) => h('input', { type: 'month', value: month, class: 'monthpick', onchange: (e) => { month = e.target.value || thisMonth(); onChange(); } });
 
   async function viewHeute() {
@@ -360,6 +378,7 @@
 
   // ---------- Chef: Einkaufsliste & Export ----------
   async function download(kind) {
+    if (window.COCKPIT_DEMO) { toast('In der Demo nicht verfügbar – in der echten App lädt hier die Excel-Datei.'); return; }
     const res = await fetch(`/app/api/export/${kind}?month=${month}`, { headers: { Authorization: `Bearer ${auth.token}` } });
     if (!res.ok) throw new Error('Export fehlgeschlagen');
     const url = URL.createObjectURL(await res.blob());
@@ -399,8 +418,8 @@
         return h('div', { class: 'staffrow' },
           h('div', { class: 'row spread' }, h('b', {}, p.ref, p.active ? '' : ' (inaktiv)'), h('span', { class: 'small' }, `${x.hours.toLocaleString('de-DE')} Std. · ${eur(x.earnedCents)} von ${eur(limit)} · ${eur(p.hourlyRateCents)}/Std.`)), m,
           h('div', { class: 'row small' },
-            h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = prompt(`Neuer Stundenlohn für ${p.ref} in €`, fromCents(p.hourlyRateCents)); if (v == null) return; const c = toCents(v); if (c == null) throw new Error('Betrag prüfen'); await api('PATCH', `/staff/${p.id}`, { hourlyRateCents: c }); route('personal'); }) }, 'Lohn ändern'),
-            h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = prompt(`Neue PIN für ${p.ref} (6–8 Ziffern)`); if (!v) return; await api('PATCH', `/staff/${p.id}`, { pin: v.trim() }); toast('PIN geändert'); }) }, 'PIN ändern'),
+            h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = await ask(`Neuer Stundenlohn für ${p.ref} in €`, { value: fromCents(p.hourlyRateCents), inputmode: 'decimal' }); if (v == null) return; const c = toCents(v); if (c == null) throw new Error('Betrag prüfen'); await api('PATCH', `/staff/${p.id}`, { hourlyRateCents: c }); route('personal'); }) }, 'Lohn ändern'),
+            h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = await ask(`Neue PIN für ${p.ref} (6–8 Ziffern)`, { value: '', inputmode: 'numeric' }); if (!v) return; await api('PATCH', `/staff/${p.id}`, { pin: v.trim() }); toast('PIN geändert'); }) }, 'PIN ändern'),
             h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/staff/${p.id}`, { active: !p.active }); route('personal'); }) }, p.active ? 'Deaktivieren' : 'Aktivieren')));
       }) : h('p', { class: 'muted' }, 'Noch niemand angelegt.')),
       h('details', { class: 'card' }, h('summary', {}, '+ Person anlegen'),
@@ -411,7 +430,7 @@
       h('h2', {}, 'Schichten'),
       h('div', { class: 'card table-wrap' }, shifts.length ? h('table', {}, h('tr', {}, h('th', {}, 'Wer'), h('th', {}, 'Wann'), h('th', {}, 'Was'), h('th', { class: 'num' }, 'Std.'), h('th', { class: 'num' }, 'Kosten'), h('th', {}, '')),
         shifts.map((s) => h('tr', {}, h('td', {}, s.staffRef), h('td', {}, `${dateTime(s.start)}–${s.end ? time(s.end) : 'läuft'}`), h('td', {}, `${KIND[s.kind]}, ${LOC[s.location]}`), h('td', { class: 'num' }, hours(s.start, s.end).toFixed(1).replace('.', ',')), h('td', { class: 'num' }, eur(Math.round(hours(s.start, s.end) * s.rateCents))),
-          h('td', {}, h('button', { type: 'button', class: 'link', onclick: run(async () => { if (!confirm('Schicht löschen?')) return; await api('DELETE', `/shifts/${s.id}`); route('personal'); }) }, 'löschen'))))) : h('p', { class: 'muted' }, 'Keine Schichten in diesem Monat.')),
+          h('td', {}, h('button', { type: 'button', class: 'link', onclick: run(async () => { if (!await ask('Schicht löschen?')) return; await api('DELETE', `/shifts/${s.id}`); route('personal'); }) }, 'löschen'))))) : h('p', { class: 'muted' }, 'Keine Schichten in diesem Monat.')),
       staff.length > 0 && h('details', { class: 'card' }, h('summary', {}, '+ Schicht nachtragen / korrigieren'),
         h('form', { onsubmit: run(async () => { await api('POST', '/shifts', { staffRef: ms.staffRef.value, kind: ms.kind.value, location: ms.location.value, start: new Date(ms.start.value).toISOString(), end: new Date(ms.end.value).toISOString() }); toast('Gespeichert'); route('personal'); }) },
           h('div', { class: 'grid2' }, field('Wer', ms.staffRef), field('Tätigkeit', ms.kind), field('Standort', ms.location), h('span'), field('Von', ms.start), field('Bis', ms.end)),
@@ -442,7 +461,7 @@
       h('div', { class: 'card table-wrap' }, list.length ? h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', {}, '')),
         list.map((p) => h('tr', { class: p.active ? '' : 'muted' }, h('td', {}, p.name), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
           h('td', { class: 'row' },
-            h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = prompt(`Neuer Preis für ${p.name} in €`, fromCents(p.priceCents)); if (v == null) return; const c = toCents(v); if (c == null) throw new Error('Preis prüfen'); await api('PATCH', `/products/${p.id}`, { priceCents: c }); route('artikel'); }) }, 'Preis'),
+            h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = await ask(`Neuer Preis für ${p.name} in €`, { value: fromCents(p.priceCents), inputmode: 'decimal' }); if (v == null) return; const c = toCents(v); if (c == null) throw new Error('Preis prüfen'); await api('PATCH', `/products/${p.id}`, { priceCents: c }); route('artikel'); }) }, 'Preis'),
             h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))))) : h('p', { class: 'muted' }, 'Noch keine Getränke.')),
       h('p', { class: 'muted small' }, 'Eintritt und Workshops zählen jeden Gast, haben aber kein Inventar. Für Workshop-Teilnehmer, die zum Übungsabend bleiben, ein Ticket mit 0 € anlegen (z. B. „Workshop-Teilnehmer inkl."). Ausgeblendete Artikel erscheinen nicht mehr an der Kasse, alte Abrechnungen bleiben erhalten. Preisänderungen gelten ab dem nächsten Verkauf.'));
   }
