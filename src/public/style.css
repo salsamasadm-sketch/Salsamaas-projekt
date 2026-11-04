@@ -392,3 +392,8 @@ th.sortable[data-dir="desc"]::after { content: " ↓"; opacity: 1; color: var(--
 :root[data-loc] .top { box-shadow: inset 0 -3px 0 var(--accent); }
 .seg button.active { transition: background-color .25s; }
 :root[data-loc] .seg button.active { background: var(--accent); color: var(--on-accent); }
+
+/* Kassenplatz */
+.seg.station button { font-size: 14px; }
+.stn { font: 600 10.5px/1 var(--f-mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px 3px; border-radius: 3px; border: 1px solid var(--rule-strong); color: var(--ink-2); }
+.stn.tuer { border-style: dashed; }

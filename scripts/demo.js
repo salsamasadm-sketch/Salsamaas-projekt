@@ -71,7 +71,8 @@ async function seedInto(store) {
     const open = new Date(`${date}T20:30:00+01:00`);
     const close = new Date(`${date}T23:59:00+01:00`);
     const guests = Math.round((wd === 6 ? 110 : wd === 5 ? 80 : 45) * (0.8 + rnd() * 0.4));
-    const sid = crypto.randomUUID();
+    const sid = crypto.randomUUID();      // Theke
+    const doorSid = crypto.randomUUID();  // Tuer
     const start = { ...stockByLoc[location] };
     const restock = {};
     for (const p of products) if (start[p.id] < 25) { restock[p.id] = 24; }
@@ -79,7 +80,7 @@ async function seedInto(store) {
     const withWorkshop = wd === 6 && rnd() < 0.6;
     for (let g = 0; g < guests; g++) {
       const t = withWorkshop && g < 22 ? (g < 18 ? tickets[1] : tickets[2]) : tickets[0];
-      await store.putDoc('sales', { id: crypto.randomUUID(), sessionId: sid, at: new Date(open.getTime() + rnd() * 90 * 60_000).toISOString(), by: 'sofia', payment: rnd() < 0.6 ? 'bar' : 'karte', items: [{ productId: t.id, qty: 1, priceCents: t.priceCents }] });
+      await store.putDoc('sales', { id: crypto.randomUUID(), sessionId: doorSid, at: new Date(open.getTime() + rnd() * 90 * 60_000).toISOString(), by: 'sofia', payment: rnd() < 0.6 ? 'bar' : 'karte', items: [{ productId: t.id, qty: 1, priceCents: t.priceCents }] });
     }
     // Kursgebuehren vor Ort (vor dem Uebungsabend)
     for (let k = 0, n = Math.floor(rnd() * 4); k < n; k++) {
@@ -100,10 +101,13 @@ async function seedInto(store) {
     stockByLoc[location] = end;
     const cashSales = (await store.listDocs('sales')).filter((x) => x.sessionId === sid && x.payment === 'bar').reduce((a, x) => a + x.items[0].qty * x.items[0].priceCents, 0);
     const diff = rnd() < 0.15 ? -Math.round(rnd() * 3000) : 0;
-    await store.putDoc('barsessions', { id: sid, date, location, cashStartCents: 15000, stockStart: start, openedBy: 'lena', openedAt: open.toISOString(), restock, stockEnd: end, cashOutCents: 0, cashEndCents: 15000 + cashSales + diff, closedBy: 'marco', closedAt: close.toISOString() });
+    const doorCash = (await store.listDocs('sales')).filter((x) => x.sessionId === doorSid && x.payment === 'bar').reduce((a, x) => a + x.items[0].qty * x.items[0].priceCents, 0);
+    await store.putDoc('barsessions', { id: doorSid, date, location, station: 'tuer', cashStartCents: 10000, stockStart: {}, openedBy: 'sofia', openedAt: new Date(open.getTime() - 10 * 60_000).toISOString(), restock: {}, stockEnd: {}, cashOutCents: 0, cashEndCents: 10000 + doorCash - (rnd() < 0.1 ? 1000 : 0), closedBy: 'sofia', closedAt: new Date(open.getTime() + 150 * 60_000).toISOString() });
+    await store.putDoc('barsessions', { id: sid, station: 'theke', date, location, cashStartCents: 15000, stockStart: start, openedBy: 'lena', openedAt: open.toISOString(), restock, stockEnd: end, cashOutCents: 0, cashEndCents: 15000 + cashSales + diff, closedBy: 'marco', closedAt: close.toISOString() });
 
     // Schichten passend zum Abend
-    const team = wd === 6 ? ['lena', 'marco', 'sofia'] : ['lena', 'marco'];
+    const team = ['lena', 'marco'];
+    await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: 'sofia', kind: 'empfang', location, start: new Date(open.getTime() - 20 * 60_000).toISOString(), end: new Date(open.getTime() + 160 * 60_000).toISOString(), rateCents: 1390, createdBy: 'sofia' });
     for (const ref of team) {
       const rate = staff.find((s) => s[0] === ref)[1];
       await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: ref, kind: 'bar', location, start: new Date(open.getTime() - 30 * 60_000).toISOString(), end: new Date(close.getTime() + 30 * 60_000).toISOString(), rateCents: rate, createdBy: ref });

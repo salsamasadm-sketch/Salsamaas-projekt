@@ -85,9 +85,12 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
   // Bar-Umsatz = nur Getraenke/Snacks. Eintritt und Workshops laufen getrennt.
   const barRevenue = sum(bars, (b) => b.drinksRevenueCents);
   const ticketRevenue = sum(bars, (b) => b.ticketRevenueCents);
-  const withGuests = bars.filter((b) => b.guests > 0);
-  const guests = sum(withGuests, (b) => b.guests);
-  const barPerGuest = guests > 0 ? sum(withGuests, (b) => b.drinksRevenueCents) / guests : null;
+  // Gaeste kommen von der Tuer, Getraenke von der Theke: pro Abend (Datum + Standort) zusammenfuehren
+  const nightsMap = new Map();
+  for (const b of bars) { const k = `${b.date}_${b.location}`; const r = nightsMap.get(k) || { guests: 0, drinks: 0 }; r.guests += b.guests || 0; r.drinks += b.drinksRevenueCents; nightsMap.set(k, r); }
+  const withGuests = [...nightsMap.values()].filter((n) => n.guests > 0);
+  const guests = sum(withGuests, (n) => n.guests);
+  const barPerGuest = guests > 0 ? sum(withGuests, (n) => n.drinks) / guests : null;
   const closed = bars.filter((b) => b.status === 'closed');
   const cashDiff = closed.length ? sum(closed, (b) => b.cashDiffCents || 0) : null;
   const missingUnits = sum(closed, (b) => b.missingUnits);
@@ -135,7 +138,7 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
   const kpis = [
     { id: 'profit', label: 'Ergebnis Monat', unit: 'eur', value: profit, hint: `Einnahmen ${eur(income)} − Kosten ${eur(costs)}`, status: fixedMonthly === 0 ? 'none' : profit >= 0 ? 'ok' : 'bad' },
     { id: 'ticketRevenue', label: 'Eintritt & Workshops', unit: 'eur', value: ticketRevenue, hint: `${sum(bars, (b) => b.ticketCount)} Tickets`, status: 'none' },
-    { id: 'barRevenue', label: 'Getränke-Umsatz', unit: 'eur', value: barRevenue, hint: `${bars.length} Abende${guests ? `, ${guests} Gäste` : ''}`, status: 'none' },
+    { id: 'barRevenue', label: 'Getränke-Umsatz', unit: 'eur', value: barRevenue, hint: `${nightsMap.size} Abende${guests ? `, ${guests} Gäste` : ''}`, status: 'none' },
     { id: 'cashDiff', label: 'Kassendifferenz', unit: 'eur', value: cashDiff, hint: `${closed.length} Abrechnungen`, status: cashDiff == null ? 'none' : Math.abs(cashDiff) <= 500 ? 'ok' : Math.abs(cashDiff) <= 2000 ? 'warn' : 'bad' },
     { id: 'missing', label: 'Inventar-Fehlmenge', unit: 'count', value: closed.length ? missingUnits : null, hint: missingUnits ? `≈ ${eur(missingValue)} Umsatz` : 'Bestand passt', status: !closed.length ? 'none' : missingUnits === 0 ? 'ok' : missingUnits <= 3 ? 'warn' : 'bad' },
     { id: 'barPerGuest', label: 'Getränke pro Gast', unit: 'eur', value: barPerGuest, target: t.barPerGuestCents, status: status(barPerGuest, t.barPerGuestCents, 'min') },
@@ -152,10 +155,10 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
     todos.push({ level: 'bad', tab: 'personal', text: `Schicht von ${s.staffRef} läuft seit ${Math.round(shiftHours(s, now))} Std. – vermutlich Ende vergessen. Bitte korrigieren.` });
   }
   for (const b of barsessions.filter((x) => !x.closedAt && x.date < today)) {
-    todos.push({ level: 'bad', tab: 'bar', text: `Kasse vom ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}) wurde nicht abgeschlossen.` });
+    todos.push({ level: 'bad', tab: 'bar', text: `${b.station === 'tuer' ? 'Tür' : 'Theken'}-Kasse vom ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}) wurde nicht abgeschlossen.` });
   }
   for (const b of closed.filter((x) => Math.abs(x.cashDiffCents || 0) > 500)) {
-    todos.push({ level: Math.abs(b.cashDiffCents) > 2000 ? 'bad' : 'warn', tab: 'bar', text: `Kassendifferenz ${eur(b.cashDiffCents)} am ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}) klären.` });
+    todos.push({ level: Math.abs(b.cashDiffCents) > 2000 ? 'bad' : 'warn', tab: 'bar', text: `Kassendifferenz ${eur(b.cashDiffCents)} an der ${b.station === 'tuer' ? 'Tür' : 'Theke'} am ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}) klären.` });
   }
   const withMissing = closed.filter((x) => x.missingUnits > 0);
   if (withMissing.length > 3) {
@@ -187,9 +190,9 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
   }
   // Pro Wochentag: Personalquote und Umsatz pro Gast
   const byWd = new Map();
-  for (const b of bars) {
-    const w = weekday(b.date); const r = byWd.get(w) || { rev: 0, guests: 0, guestRev: 0, cost: 0 };
-    r.rev += b.drinksRevenueCents; if (b.guests > 0) { r.guests += b.guests; r.guestRev += b.drinksRevenueCents; } byWd.set(w, r);
+  for (const [k, n] of nightsMap) {
+    const w = weekday(k.slice(0, 10)); const r = byWd.get(w) || { rev: 0, guests: 0, guestRev: 0, cost: 0 };
+    r.rev += n.drinks; if (n.guests > 0) { r.guests += n.guests; r.guestRev += n.drinks; } byWd.set(w, r);
   }
   for (const s of barShifts) {
     const w = weekday(berlinDate(s.start)); const r = byWd.get(w) || { rev: 0, guests: 0, guestRev: 0, cost: 0 };
@@ -212,7 +215,7 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
   const shopping = [];
   const prodById = new Map(products.map((p) => [p.id, p]));
   for (const location of Object.keys(LOC_LABEL)) {
-    const recent = barsessions.filter((b) => b.location === location && b.closedAt).sort((a, b) => b.closedAt.localeCompare(a.closedAt)).slice(0, 4)
+    const recent = barsessions.filter((b) => b.location === location && b.closedAt && b.station !== 'tuer').sort((a, b) => b.closedAt.localeCompare(a.closedAt)).slice(0, 4)
       .map((b) => computeSettlement(b, salesBySession.get(b.id) || [], products));
     if (!recent.length) continue;
     for (const it of recent[0].items) {
@@ -262,7 +265,7 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
     kpis,
     todos,
     insights,
-    bar: { revenueCents: barRevenue, ticketRevenueCents: ticketRevenue, ticketMix: [...ticketMix.values()].sort((a, b) => b.qty - a.qty), guests, nights: bars.length, cashDiffCents: cashDiff, missingUnits, missingValueCents: missingValue, daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)), byWeekday: wdRows, topProducts: [...top.values()].filter((x) => x.qty > 0).sort((a, b) => b.revenueCents - a.revenueCents), sessions: bars.sort((a, b) => b.date.localeCompare(a.date)) },
+    bar: { revenueCents: barRevenue, ticketRevenueCents: ticketRevenue, ticketMix: [...ticketMix.values()].sort((a, b) => b.qty - a.qty), guests, nights: nightsMap.size, cashDiffCents: cashDiff, missingUnits, missingValueCents: missingValue, daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)), byWeekday: wdRows, topProducts: [...top.values()].filter((x) => x.qty > 0).sort((a, b) => b.revenueCents - a.revenueCents), sessions: bars.sort((a, b) => b.date.localeCompare(a.date)) },
     shopping,
     personnel: { totalCents: personnelCost, barCents: barPersonnelCost, byStaff },
     courses: { utilizationPct, participants, capacity: cap, openCount: openEnr.length, openOwedCents: openOwed, rows: courseRows },

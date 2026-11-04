@@ -61,23 +61,31 @@ test('Kasse: oeffnen, verkaufen, stornieren, schliessen, Abrechnung mit Kassen- 
   const id = open.body.id;
   assert.equal((await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', cashStartCents: 0, stockStart: {} } })).status, 409);
 
-  await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 2 }, { productId: entry.id, qty: 2 }] } });
-  await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'karte', items: [{ productId: mojito.id, qty: 1 }, { productId: wsIncl.id, qty: 1 }] } });
+  // Eintritt geht nur an der Tuer-Kasse
+  assert.equal((await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: entry.id, qty: 1 }] } })).body.error, 'wrong_station');
+  const door = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', station: 'tuer', cashStartCents: 5000 } })).body;
+  assert.equal(door.station, 'tuer');
+  assert.equal((await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 1 }] } })).body.error, 'wrong_station');
+  await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: entry.id, qty: 2 }] } });
+  await s.call('POST', `/app/api/bar/${door.id}/sales`, { token: lena, body: { payment: 'karte', items: [{ productId: wsIncl.id, qty: 1 }] } });
+  const doorClose = (await s.call('POST', `/app/api/bar/${door.id}/close`, { token: lena, body: { cashEndCents: 6600 } })).body;
+  assert.deepEqual([doorClose.guests, doorClose.ticketRevenueCents, doorClose.cashDiffCents, doorClose.items.length], [3, 1600, 0, 0]);
+  await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 2 }] } });
+  await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'karte', items: [{ productId: mojito.id, qty: 1 }] } });
   await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'gratis', items: [{ productId: cola.id, qty: 1 }] } });
   const wrong = await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: mojito.id, qty: 3 }] } });
   assert.equal((await s.call('DELETE', `/app/api/bar/${id}/sales/${wrong.body.id}`, { token: lena })).status, 204);
   // Preis kommt vom Server: ein mitgeschickter Preis wird abgelehnt
   assert.equal((await s.call('POST', `/app/api/bar/${id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 1, priceCents: 1 }] } })).status, 400);
 
-  // Soll Kasse: 100 + 2*3,50 + 2*8 = 123,00; gezaehlt 120 -> -3,00. Cola: 20-3=17, gezaehlt 16 -> -1
-  const close = await s.call('POST', `/app/api/bar/${id}/close`, { token: lena, body: { cashEndCents: 12000, stockEnd: { [cola.id]: 16, [mojito.id]: 9 } } });
+  // Soll Theke: 100 + 2*3,50 = 107,00; gezaehlt 104 -> -3,00. Cola: 20-3=17, gezaehlt 16 -> -1
+  const close = await s.call('POST', `/app/api/bar/${id}/close`, { token: lena, body: { cashEndCents: 10400, stockEnd: { [cola.id]: 16, [mojito.id]: 9 } } });
   assert.equal(close.status, 200);
   const r = close.body;
-  assert.equal(r.revenueCents, 700 + 1600 + 850);
-  assert.equal(r.ticketRevenueCents, 1600);
+  assert.equal(r.revenueCents, 700 + 850);
+  assert.equal(r.ticketRevenueCents, 0);
   assert.equal(r.drinksRevenueCents, 1550);
-  assert.equal(r.guests, 3); // 2 Eintritt + 1 Workshop inkl.
-  assert.equal(r.cashExpectedCents, 12300);
+  assert.equal(r.cashExpectedCents, 10700);
   assert.equal(r.cashDiffCents, -300);
   assert.equal(r.voidedCount, 1);
   assert.deepEqual(r.items.find((i) => i.productId === cola.id).diff, -1);
@@ -88,6 +96,9 @@ test('Kasse: oeffnen, verkaufen, stornieren, schliessen, Abrechnung mit Kassen- 
   const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
   assert.equal(d.bar.revenueCents, 1550);
   assert.equal(d.bar.ticketRevenueCents, 1600);
+  assert.equal(d.bar.guests, 3); // Gaeste von der Tuer, Getraenke von der Theke, ein Abend
+  assert.equal(d.bar.nights, 1);
+  assert.equal(Math.round(d.kpis.find((k) => k.id === 'barPerGuest').value), Math.round(1550 / 3));
   assert.ok(d.todos.some((t) => /Inventar/.test(t.text)));
 
   const csv = await s.call('GET', `/app/api/export/abende?month=${r.date.slice(0, 7)}`, { token: chef });

@@ -64,7 +64,7 @@ function computeSettlement(session, sales, products = []) {
   const cashCounted = session.cashEndCents ?? null;
   const missingUnits = items.reduce((a, i) => a + (i.diff != null && i.diff < 0 ? -i.diff : 0), 0);
   return {
-    sessionId: session.id, date: session.date, location: session.location, status: session.closedAt ? 'closed' : 'open',
+    sessionId: session.id, date: session.date, location: session.location, station: session.station === 'tuer' ? 'tuer' : 'theke', status: session.closedAt ? 'closed' : 'open',
     salesCount: count, revenueCents: cash + card, cashSalesCents: cash, cardSalesCents: card,
     drinksRevenueCents: cash + card - ticketRev - courseRev, ticketRevenueCents: ticketRev, ticketCount,
     courseFeeCents: courseRev, courseFees: [...fees.values()].sort((a, b) => b.revenueCents - a.revenueCents),
@@ -79,4 +79,12 @@ function computeSettlement(session, sales, products = []) {
   };
 }
 
-module.exports = { computeSettlement, TICKET_CATEGORIES, COURSE_CATEGORIES };
+/**
+ * Kassenplaetze: Tuer (Eingang) kassiert nur Eintritt und Workshops, ohne Inventar.
+ * Theke (Bar) verkauft Getraenke und Kursgebuehren, mit Inventar.
+ */
+const STATIONS = ['tuer', 'theke'];
+const stationOf = (session) => (session.station === 'tuer' ? 'tuer' : 'theke');
+const allowedAtStation = (station, category) => (station === 'tuer' ? TICKET_CATEGORIES.includes(category) : !TICKET_CATEGORIES.includes(category));
+
+module.exports = { computeSettlement, TICKET_CATEGORIES, COURSE_CATEGORIES, STATIONS, stationOf, allowedAtStation };

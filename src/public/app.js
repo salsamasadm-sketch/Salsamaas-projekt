@@ -6,6 +6,12 @@
   const KIND = { bar: 'Bar / Theke', kurs: 'Unterricht', empfang: 'Empfang / Tür', sonstiges: 'Sonstiges' };
   const TICKET = ['eintritt', 'workshop', 'kursgebuehr']; // ohne Inventar
   const FEE = 'kursgebuehr';
+  // Kassenplaetze: Tuer = nur Eintritt/Workshops (ohne Inventar), Theke = Getraenke + Kursgebuehren (mit Inventar)
+  const STATION = { tuer: 'Tür · Eintritt', theke: 'Theke · Bar' };
+  const STATION_SHORT = { tuer: 'Tür', theke: 'Theke' };
+  const STATION_KASSE = { tuer: 'Tür-Kasse', theke: 'Theken-Kasse' };
+  const DOOR_CATS = ['eintritt', 'workshop'];
+  const allowedAt = (st, cat) => (st === 'tuer' ? DOOR_CATS.includes(cat) : !DOOR_CATS.includes(cat));
   const CAT = { eintritt: 'Eintritt', workshop: 'Workshops', kursgebuehr: 'Kursgebühren', softdrinks: 'Softdrinks', bier: 'Bier', wein: 'Wein & Sekt', cocktails: 'Cocktails', longdrinks: 'Longdrinks', shots: 'Shots', heiss: 'Heißgetränke', snacks: 'Snacks', sonstiges: 'Sonstiges' };
   const PAY = { bar: 'Bar', karte: 'Karte', gratis: 'Gratis/Personal' };
 
@@ -204,11 +210,23 @@
   }
 
   // ---------- Kasse ----------
+  let station = store.get('cockpit.station') || 'theke';
+  let stationChosen = false;
+  const setStation = (st) => { station = st; stationChosen = true; store.set('cockpit.station', st); };
   async function viewKasse() {
-    const [cur, products] = await Promise.all([api('GET', `/bar/current?location=${loc}`), api('GET', '/products')]);
-    const root = h('div', {}, seg(LOC, loc, (l) => { setLoc(l); route('kasse'); }));
-    if (!products.length) return root.append(h('div', { class: 'card' }, h('p', {}, auth.role === 'owner' ? 'Lege zuerst unter „Getränke" deine Artikel mit Preisen an.' : 'Noch keine Getränke angelegt – bitte Pablo Bescheid geben.'))), root;
-    if (!cur.session) root.append(openForm(products.filter((p) => !TICKET.includes(p.category)), cur.lastStock));
+    // Team: Kassenplatz automatisch aus der laufenden Schicht (Empfang/Tuer -> Tuer, Bar/Theke -> Theke)
+    if (auth.role === 'staff' && !stationChosen) {
+      const me = await api('GET', '/me');
+      if (me.openShift?.kind === 'empfang') station = 'tuer';
+      else if (me.openShift?.kind === 'bar') station = 'theke';
+      if (me.openShift) setLoc(me.openShift.location);
+    }
+    const [cur, all] = await Promise.all([api('GET', `/bar/current?location=${loc}&station=${station}`), api('GET', '/products')]);
+    const products = all.filter((p) => allowedAt(station, p.category));
+    const root = h('div', {}, seg(LOC, loc, (l) => { setLoc(l); route('kasse'); }),
+      h('div', { class: 'seg station' }, Object.entries(STATION).map(([k, l]) => h('button', { type: 'button', class: k === station ? 'active' : '', onclick: () => { setStation(k); route('kasse'); } }, l))));
+    if (!products.length) return root.append(h('div', { class: 'card' }, h('p', {}, auth.role === 'owner' ? `Lege zuerst unter „Getränke" Artikel für ${STATION_SHORT[station] === 'Tür' ? 'Eintritt/Workshops' : 'die Theke'} an.` : 'Für diesen Kassenplatz sind noch keine Artikel angelegt – bitte Pablo Bescheid geben.'))), root;
+    if (!cur.session) root.append(openForm(station === 'tuer' ? [] : products.filter((p) => !TICKET.includes(p.category)), cur.lastStock));
     else root.append(await posView(cur, products));
     return root;
   }
@@ -229,13 +247,13 @@
     const st = stockTable(products, lastStock);
     return h('form', { class: 'card', onsubmit: run(async () => {
       const c = toCents(cash.value); if (c == null) throw new Error('Kassenbestand prüfen');
-      await api('POST', '/bar/open', { location: loc, cashStartCents: c, stockStart: st.read() });
+      await api('POST', '/bar/open', { location: loc, station, cashStartCents: c, stockStart: station === 'tuer' ? {} : st.read() });
       toast('Kasse geöffnet'); route('kasse');
     }) },
-    h('h1', {}, `Kasse öffnen – ${LOC[loc]}`),
-    h('p', { class: 'muted small' }, 'Vor dem ersten Verkauf: Wechselgeld in der Kasse zählen und den Bestand an der Bar zählen. Vorausgefüllt ist der Endbestand vom letzten Mal – bitte kontrollieren.'),
+    h('h1', {}, `${STATION_KASSE[station]} öffnen – ${LOC[loc]}`),
+    h('p', { class: 'muted small' }, station === 'tuer' ? 'Vor dem ersten Gast: Wechselgeld in der Tür-Kasse zählen. An der Tür gibt es kein Inventar.' : 'Vor dem ersten Verkauf: Wechselgeld in der Kasse zählen und den Bestand an der Bar zählen. Vorausgefüllt ist der Endbestand vom letzten Mal – bitte kontrollieren.'),
     field('Kassenbestand (Wechselgeld) in €', cash),
-    h('h2', {}, 'Inventar – Anfangsbestand'), st.el,
+    station !== 'tuer' && h('h2', {}, 'Inventar – Anfangsbestand'), station !== 'tuer' && st.el,
     h('button', { class: 'btn block', type: 'submit' }, 'Kasse öffnen'));
   }
 
@@ -253,7 +271,7 @@
     let lastTotal = 0;
 
     const renderHead = () => head.replaceChildren(
-      h('div', { class: 'row spread' }, h('b', {}, `Kasse offen · ${LOC[ses.location]}`), h('span', { class: 'muted small' }, `seit ${time(ses.openedAt)} (${ses.openedBy})`)),
+      h('div', { class: 'row spread' }, h('b', {}, `${STATION_KASSE[station]} offen · ${LOC[ses.location]}`), h('span', { class: 'muted small' }, `seit ${time(ses.openedAt)} (${ses.openedBy})`)),
       h('div', { class: 'grid3 small' },
         h('div', {}, h('div', { class: 'muted' }, 'Umsatz heute'), h('b', {}, eur(set.revenueCents))),
         h('div', {}, h('div', { class: 'muted' }, set.courseFeeCents ? 'Eintritt / Kurs / Getränke' : 'Eintritt / Getränke'), h('b', {}, set.courseFeeCents ? `${eur(set.ticketRevenueCents)} / ${eur(set.courseFeeCents)} / ${eur(set.drinksRevenueCents)}` : `${eur(set.ticketRevenueCents)} / ${eur(set.drinksRevenueCents)}`)),
@@ -290,7 +308,7 @@
             !s.voided && h('button', { type: 'button', class: 'ghost', onclick: run(async () => { if (!await ask('Diese Buchung stornieren?')) return; await api('DELETE', `/bar/${ses.id}/sales/${s.id}`); toast('Storniert'); await refresh(); }) }, 'Storno'));
         })) : h('p', { class: 'muted small' }, 'Noch nichts verkauft.'));
     };
-    const refresh = async () => { set = (await api('GET', `/bar/current?location=${ses.location}`)).settlement; renderHead(); renderCart(); await renderRecent(); };
+    const refresh = async () => { set = (await api('GET', `/bar/current?location=${ses.location}&station=${station}`)).settlement; renderHead(); renderCart(); await renderRecent(); };
 
     // Getraenke-Buttons nach Kategorie
     const grid = h('div', {});
@@ -306,7 +324,7 @@
     }
     renderHead(); renderCart(); await renderRecent();
     root.append(head, cartBox, h('div', { class: 'card' }, grid), recentBox,
-      h('button', { class: 'btn block stop', type: 'button', onclick: () => show(closeForm(ses, products.filter((p) => !TICKET.includes(p.category)), set)) }, 'Kasse schließen & abrechnen'));
+      h('button', { class: 'btn block stop', type: 'button', onclick: () => show(closeForm(ses, station === 'tuer' ? [] : products.filter((p) => !TICKET.includes(p.category)), set)) }, `${STATION_KASSE[station]} schließen & abrechnen`));
     return root;
   }
 
@@ -323,15 +341,16 @@
       const c = toCents(cash.value); const o = toCents(out.value);
       if (c == null || o == null) throw new Error('Beträge prüfen');
       if (!await ask('Kasse jetzt schließen? Danach kann nichts mehr gebucht werden.')) return;
-      const result = await api('POST', `/bar/${ses.id}/close`, { cashEndCents: c, cashOutCents: o, stockEnd: end.read(), restock: restock.read(), ...(guests.value && { guests: Number(guests.value) }), ...(note.value.trim() && { note: note.value.trim() }) });
+      const door = station === 'tuer';
+      const result = await api('POST', `/bar/${ses.id}/close`, { cashEndCents: c, cashOutCents: o, stockEnd: door ? {} : end.read(), restock: door ? {} : restock.read(), ...(guests.value && { guests: Number(guests.value) }), ...(note.value.trim() && { note: note.value.trim() }) });
       toast('Kasse abgeschlossen');
       route('abrechnung', result);
     }) },
-    h('h1', {}, `Kasse schließen – ${LOC[ses.location]}`),
-    h('p', { class: 'muted small' }, 'Bargeld zählen (inklusive Wechselgeld) und den Bestand an der Bar zählen. Die App vergleicht danach automatisch mit den Verkäufen.'),
-    h('div', { class: 'grid2' }, field('Bargeld gezählt in €', cash), field('Entnahmen in € (Belege)', out), field('Gäste (ca.)', guests), field('Notiz', note)),
-    h('details', {}, h('summary', {}, 'Während des Abends nachgefüllt? (aus dem Lager)'), restock.el),
-    h('h2', {}, 'Inventar – Endbestand (gezählt)'), end.el,
+    h('h1', {}, `${STATION_KASSE[station]} schließen – ${LOC[ses.location]}`),
+    h('p', { class: 'muted small' }, station === 'tuer' ? 'Bargeld in der Tür-Kasse zählen (inklusive Wechselgeld). Die Gästezahl kommt automatisch aus den verkauften Tickets.' : 'Bargeld zählen (inklusive Wechselgeld) und den Bestand an der Bar zählen. Die App vergleicht danach automatisch mit den Verkäufen.'),
+    h('div', { class: 'grid2' }, field('Bargeld gezählt in €', cash), field('Entnahmen in € (Belege)', out), station !== 'tuer' && field('Gäste (ca.)', guests), field('Notiz', note)),
+    station !== 'tuer' && h('details', {}, h('summary', {}, 'Während des Abends nachgefüllt? (aus dem Lager)'), restock.el),
+    station !== 'tuer' && h('h2', {}, 'Inventar – Endbestand (gezählt)'), station !== 'tuer' && end.el,
     h('div', { class: 'row' }, h('button', { class: 'btn', type: 'submit' }, 'Abschließen'), h('button', { class: 'btn secondary', type: 'button', onclick: () => route('kasse') }, 'Zurück zur Kasse')));
   }
 
@@ -347,11 +366,11 @@
     return h('div', {},
       h('div', { class: 'kpis' },
         kpiTile('Umsatz gesamt', eur(s.revenueCents), `bar ${eur(s.cashSalesCents)} · Karte ${eur(s.cardSalesCents)}`, 'none'),
-        kpiTile('Eintritt & Workshops', eur(s.ticketRevenueCents), `${s.guests ?? 0} Gäste`, 'none'),
-        s.courseFeeCents > 0 && kpiTile('Kursgebühren vor Ort', eur(s.courseFeeCents), `${s.courseFees.reduce((a, f) => a + f.qty, 0)} Zahlungen`, 'none'),
-        kpiTile('Getränke', eur(s.drinksRevenueCents), `${s.salesCount} Buchungen${s.voidedCount ? `, ${s.voidedCount} Storno` : ''}`, 'none'),
+        (s.station === 'tuer' || s.ticketRevenueCents > 0) && kpiTile('Eintritt & Workshops', eur(s.ticketRevenueCents), `${s.guests ?? 0} Gäste`, 'none'),
+        s.station !== 'tuer' && s.courseFeeCents > 0 && kpiTile('Kursgebühren vor Ort', eur(s.courseFeeCents), `${s.courseFees.reduce((a, f) => a + f.qty, 0)} Zahlungen`, 'none'),
+        s.station !== 'tuer' && kpiTile('Getränke', eur(s.drinksRevenueCents), `${s.salesCount} Buchungen${s.voidedCount ? `, ${s.voidedCount} Storno` : ''}`, 'none'),
         kpiTile('Kassendifferenz', signedEur(s.cashDiffCents), `Soll ${eur(s.cashExpectedCents)}, gezählt ${eur(s.cashCountedCents)}`, cashLevel),
-        kpiTile('Inventar', s.status !== 'closed' ? '–' : s.missingUnits === 0 ? 'passt' : `${s.missingUnits} fehlen`, s.missingUnits ? `≈ ${eur(s.missingValueCents)} Umsatz` : `${s.freeUnits || 0} gratis gebucht`, invLevel)),
+        s.station !== 'tuer' && kpiTile('Inventar', s.status !== 'closed' ? '–' : s.missingUnits === 0 ? 'passt' : `${s.missingUnits} fehlen`, s.missingUnits ? `≈ ${eur(s.missingValueCents)} Umsatz` : `${s.freeUnits || 0} gratis gebucht`, invLevel)),
       s.courseFees?.length > 0 && h('div', { class: 'card table-wrap' }, h('b', {}, 'Kursgebühren vor Ort'), h('table', {},
         h('tr', {}, h('th', {}, 'Art'), h('th', { class: 'num' }, 'Anzahl'), h('th', { class: 'num' }, 'Betrag'), h('th', {}, 'Für')),
         s.courseFees.map((f) => h('tr', {}, h('td', {}, f.name), h('td', { class: 'num' }, f.qty), h('td', { class: 'num' }, eur(f.revenueCents)), h('td', { class: 'small' }, f.refs.join(', ') || '–'))))),
@@ -359,15 +378,15 @@
         h('tr', {}, h('th', {}, 'Ticket'), h('th', { class: 'num' }, 'Personen'), h('th', { class: 'num' }, 'Umsatz')),
         s.tickets.map((t) => h('tr', {}, h('td', {}, t.name), h('td', { class: 'num' }, t.qty), h('td', { class: 'num' }, eur(t.revenueCents)))))),
       h('div', { class: 'card' },
-        h('p', { class: 'small muted' }, `Kasse: Anfang ${eur(s.cashStartCents)} + Bareinnahmen (Eintritt + Getränke) ${eur(s.cashSalesCents)} − Entnahmen ${eur(s.cashOutCents)} = Soll ${eur(s.cashExpectedCents)}`),
-        h('div', { class: 'table-wrap' }, h('table', {},
+        h('p', { class: 'small muted' }, `Kasse: Anfang ${eur(s.cashStartCents)} + Bareinnahmen ${eur(s.cashSalesCents)} − Entnahmen ${eur(s.cashOutCents)} = Soll ${eur(s.cashExpectedCents)}`),
+        s.station !== 'tuer' && h('div', { class: 'table-wrap' }, h('table', {},
           h('tr', {}, h('th', {}, 'Artikel'), h('th', { class: 'num' }, 'Anfang'), h('th', { class: 'num' }, '+Nachf.'), h('th', { class: 'num' }, 'Verkauft'), h('th', { class: 'num' }, 'Soll'), h('th', { class: 'num' }, 'Gezählt'), h('th', { class: 'num' }, 'Diff.'), h('th', { class: 'num' }, 'Umsatz')),
           s.items.map((i) => h('tr', {}, h('td', {}, i.name), h('td', { class: 'num' }, i.start ?? '–'), h('td', { class: 'num' }, i.restock || ''), h('td', { class: 'num' }, i.sold), h('td', { class: 'num' }, i.expectedEnd), h('td', { class: 'num' }, i.countedEnd ?? '–'), diffCell(i.diff), h('td', { class: 'num' }, eur(i.revenueCents)))))),
         s.note && h('p', { class: 'small' }, `Notiz: ${s.note}`),
         h('p', { class: 'small muted' }, `Geöffnet von ${s.openedBy} um ${time(s.openedAt)}${s.closedAt ? `, geschlossen von ${s.closedBy} um ${time(s.closedAt)}` : ''}.`)));
   }
   function viewAbrechnung(s) {
-    return h('div', {}, h('h1', {}, `Abrechnung ${dmy(s.date)} – ${LOC[s.location]}`), settlementCard(s),
+    return h('div', {}, h('h1', {}, `Abrechnung ${STATION_SHORT[s.station] || ''} ${dmy(s.date)} – ${LOC[s.location]}`), settlementCard(s),
       h('button', { class: 'btn secondary', type: 'button', onclick: () => route(auth.role === 'owner' ? 'bar' : 'kasse') }, 'Fertig'));
   }
 
@@ -582,8 +601,8 @@
     return h('div', {},
       h('div', { class: 'row spread' }, h('h1', {}, 'Abrechnungen'), monthPicker(() => route('bar'))),
       list.length ? h('div', { class: 'card table-wrap' }, h('table', {},
-        h('tr', {}, h('th', {}, 'Datum'), h('th', {}, 'Standort'), h('th', { class: 'num' }, 'Umsatz'), h('th', { class: 'num' }, 'Kasse ±'), h('th', { class: 'num' }, 'Fehlt'), h('th', {}, '')),
-        list.map((s) => h('tr', {}, h('td', {}, dmy(s.date)), h('td', {}, LOC[s.location]), h('td', { class: 'num' }, eur(s.revenueCents)), s.status === 'open' ? h('td', { class: 'num muted' }, 'offen') : diffCell(s.cashDiffCents, true), h('td', { class: 'num' }, s.status === 'open' ? '–' : s.missingUnits), h('td', {}, h('button', { type: 'button', class: 'link', onclick: () => route('abrechnung', s) }, 'Details')))))) : h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Keine Kassen in diesem Monat.')));
+        h('tr', {}, h('th', {}, 'Datum'), h('th', {}, 'Standort'), h('th', {}, 'Kasse'), h('th', { class: 'num' }, 'Umsatz'), h('th', { class: 'num' }, 'Kasse ±'), h('th', { class: 'num' }, 'Fehlt'), h('th', {}, '')),
+        list.map((s) => h('tr', {}, h('td', {}, dmy(s.date)), h('td', {}, LOC[s.location]), h('td', {}, h('span', { class: `stn ${s.station}` }, STATION_SHORT[s.station])), h('td', { class: 'num' }, eur(s.revenueCents)), s.status === 'open' ? h('td', { class: 'num muted' }, 'offen') : diffCell(s.cashDiffCents, true), h('td', { class: 'num' }, s.status === 'open' || s.station === 'tuer' ? '–' : s.missingUnits), h('td', {}, h('button', { type: 'button', class: 'link', onclick: () => route('abrechnung', s) }, 'Details')))))) : h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Keine Kassen in diesem Monat.')));
   }
 
   // ---------- Chef: Einkaufsliste & Export ----------

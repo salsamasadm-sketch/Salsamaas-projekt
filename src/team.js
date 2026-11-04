@@ -6,7 +6,7 @@ const { rateLimit } = require('express-rate-limit');
 const { hashPin, verifyPin } = require('./session');
 const { sha256 } = require('./auth');
 const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = require('./dashboard');
-const { computeSettlement } = require('./bar');
+const { computeSettlement, STATIONS, stationOf, allowedAtStation } = require('./bar');
 const S = require('./schemas');
 
 /**
@@ -38,9 +38,9 @@ const productCreate = z.object({ name: pname, priceCents: cents(100_000), catego
 const productPatch = z.object({ name: pname.optional(), priceCents: cents(100_000).optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
 const stock = z.record(S.id, z.number().int().min(0).max(10_000)).refine((o) => Object.keys(o).length <= 300, 'zu viele Artikel');
-const sessionOpen = z.object({ location: LOC, cashStartCents: cents(10_000_000), stockStart: stock }).strict();
+const sessionOpen = z.object({ location: LOC, station: z.enum(STATIONS).default('theke'), cashStartCents: cents(10_000_000), stockStart: stock.default({}) }).strict();
 const saleSchema = z.object({ note: z.string().trim().min(1).max(60).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen').optional(), payment: z.enum(['bar', 'karte', 'gratis']), items: z.array(z.object({ productId: S.id, qty: z.number().int().min(1).max(50) }).strict()).min(1).max(30) }).strict();
-const sessionClose = z.object({ cashEndCents: cents(10_000_000), cashOutCents: cents(10_000_000).default(0), stockEnd: stock, restock: stock.default({}), guests: z.number().int().min(0).max(3000).optional(), note: note.optional() }).strict();
+const sessionClose = z.object({ cashEndCents: cents(10_000_000), cashOutCents: cents(10_000_000).default(0), stockEnd: stock.default({}), restock: stock.default({}), guests: z.number().int().min(0).max(3000).optional(), note: note.optional() }).strict();
 const staffCreate = z.object({ ref, pin, hourlyRateCents: cents(20_000), active: z.boolean().default(true) }).strict();
 const staffPatch = z.object({ pin: pin.optional(), hourlyRateCents: cents(20_000).optional(), active: z.boolean().optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
@@ -192,19 +192,22 @@ function createTeamRouter({ store, keys, sessions, logger }) {
   r.get('/bar/current', wrap(async (req, res) => {
     const location = S.LOCATIONS.includes(req.query.location) ? req.query.location : null;
     if (!location) return res.status(400).json({ error: 'invalid_location' });
-    const sessions = (await store.listDocs('barsessions')).filter((b) => b.location === location);
+    const station = STATIONS.includes(req.query.station) ? req.query.station : 'theke';
+    // Eine Kasse pro Standort und Kassenplatz (Tuer und Theke haben getrennte Kassenladen)
+    const sessions = (await store.listDocs('barsessions')).filter((b) => b.location === location && stationOf(b) === station);
     const open = sessions.find((b) => !b.closedAt) || null;
     const last = sessions.filter((b) => b.closedAt).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0];
-    res.json({ session: open && { id: open.id, date: open.date, location: open.location, openedBy: open.openedBy, openedAt: open.openedAt }, settlement: open ? await settlement(open) : null, lastStock: last?.stockEnd || {}, lastSessionId: last?.id || null });
+    res.json({ station, session: open && { id: open.id, date: open.date, location: open.location, station, openedBy: open.openedBy, openedAt: open.openedAt }, settlement: open ? await settlement(open) : null, lastStock: last?.stockEnd || {}, lastSessionId: last?.id || null });
   }));
 
   r.post('/bar/open', wrap(async (req, res) => {
     const d = parse(sessionOpen, req.body, res); if (!d) return;
-    const open = (await store.listDocs('barsessions')).find((b) => b.location === d.location && !b.closedAt);
+    if (d.station === 'tuer') d.stockStart = {};
+    const open = (await store.listDocs('barsessions')).find((b) => b.location === d.location && stationOf(b) === d.station && !b.closedAt);
     if (open) return res.status(409).json({ error: 'session_open', sessionId: open.id });
     const ses = { id: crypto.randomUUID(), date: berlinDate(new Date()), ...d, openedBy: by(req), openedAt: new Date().toISOString(), closedAt: null };
     await store.putDoc('barsessions', ses); log(req, 'bar_opened');
-    res.status(201).json({ id: ses.id, date: ses.date, location: ses.location });
+    res.status(201).json({ id: ses.id, date: ses.date, location: ses.location, station: ses.station });
   }));
 
   r.post('/bar/:id/sales', wrap(async (req, res) => {
@@ -218,6 +221,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     for (const it of d.items) {
       const p = products.get(it.productId);
       if (!p || p.active === false) return res.status(400).json({ error: 'unknown_product' });
+      if (!allowedAtStation(stationOf(ses), p.category)) return res.status(400).json({ error: 'wrong_station' });
       items.push({ productId: p.id, qty: it.qty, priceCents: p.priceCents });
     }
     const sale = { id: crypto.randomUUID(), sessionId: ses.id, at: new Date().toISOString(), by: by(req), payment: d.payment, items, ...(d.note && { note: d.note }) };
@@ -292,8 +296,8 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     let rows;
     if (req.params.kind === 'abende') {
       const list = (await Promise.all((await store.listDocs('barsessions')).filter((b) => inR(range, b.date)).map(settlement))).sort((a, b) => a.date.localeCompare(b.date));
-      rows = [['Datum', 'Standort', 'Gäste', 'Eintritt+Workshops', 'Getränke', 'Umsatz gesamt', 'davon bar', 'davon Karte', 'Kasse Anfang', 'Entnahmen', 'Kasse Soll', 'Kasse gezählt', 'Kassendifferenz', 'Fehlmenge Stück', 'Storno', 'geöffnet von', 'geschlossen von', 'Notiz'],
-        ...list.map((s) => [s.date, s.location, s.guests ?? '', money(s.ticketRevenueCents), money(s.drinksRevenueCents), money(s.revenueCents), money(s.cashSalesCents), money(s.cardSalesCents), money(s.cashStartCents), money(s.cashOutCents), money(s.cashExpectedCents), money(s.cashCountedCents), money(s.cashDiffCents), s.missingUnits, s.voidedCount, s.openedBy, s.closedBy || 'offen', s.note || ''])];
+      rows = [['Datum', 'Standort', 'Kassenplatz', 'Gäste', 'Eintritt+Workshops', 'Getränke', 'Umsatz gesamt', 'davon bar', 'davon Karte', 'Kasse Anfang', 'Entnahmen', 'Kasse Soll', 'Kasse gezählt', 'Kassendifferenz', 'Fehlmenge Stück', 'Storno', 'geöffnet von', 'geschlossen von', 'Notiz'],
+        ...list.map((s) => [s.date, s.location, s.station === 'tuer' ? 'Tür' : 'Theke', s.guests ?? '', money(s.ticketRevenueCents), money(s.drinksRevenueCents), money(s.revenueCents), money(s.cashSalesCents), money(s.cardSalesCents), money(s.cashStartCents), money(s.cashOutCents), money(s.cashExpectedCents), money(s.cashCountedCents), money(s.cashDiffCents), s.missingUnits, s.voidedCount, s.openedBy, s.closedBy || 'offen', s.note || ''])];
     } else {
       const list = (await store.listDocs('shifts')).filter((s) => inR(range, berlinDate(s.start))).sort((a, b) => a.staffRef.localeCompare(b.staffRef) || a.start.localeCompare(b.start));
       const t = (iso) => new Date(iso).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' });
