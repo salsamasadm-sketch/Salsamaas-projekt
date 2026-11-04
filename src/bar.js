@@ -1,4 +1,21 @@
 'use strict';
+/** Arbeitszeit wird immer auf die naechste Viertelstunde aufgerundet (z. B. 2:05 Std. -> 2,25 Std.). */
+const QUARTER_MS = 15 * 60_000;
+const billedHours = (start, end) => (Math.ceil(Math.max(0, new Date(end) - new Date(start)) / QUARTER_MS) * QUARTER_MS) / 3_600_000;
+
+/**
+ * Aushilfen (nicht registriert) beim Kassenabschluss: Stunden aufrunden, Lohn berechnen.
+ * payout: 'bar' = aus dieser Kasse ausgezahlt (mindert das Kassensoll), 'ueberweisung' = wird ueberwiesen (Minijob).
+ */
+function buildHelpers(session, input = [], newId) {
+  return input.map((x) => {
+    const hours = billedHours(x.start, x.end);
+    return { id: newId(), name: x.name, start: new Date(x.start).toISOString(), end: new Date(x.end).toISOString(), hours, rateCents: x.rateCents, payCents: Math.round(hours * x.rateCents), payout: x.payout };
+  });
+}
+/** Aus einer Aushilfe wird eine Schicht (damit sie in Personalkosten und Export auftaucht). */
+const helperShift = (session, hl) => ({ id: hl.id, staffRef: hl.name, helper: true, kind: session.station === 'tuer' ? 'empfang' : 'bar', location: session.location, start: hl.start, end: hl.end, rateCents: hl.rateCents, payout: hl.payout, paid: hl.payout === 'bar', sessionId: session.id, createdBy: 'kasse' });
+
 /** Kategorien ohne Inventar: Eintritt und Workshops (zaehlen als Gaeste). */
 const TICKET_CATEGORIES = ['eintritt', 'workshop'];
 /** Kursgebuehren vor Ort: kein Inventar, keine Gaeste, zaehlen zu den Kurseinnahmen. */
@@ -60,7 +77,9 @@ function computeSettlement(session, sales, products = []) {
     };
   }).sort((a, b) => b.revenueCents - a.revenueCents || a.name.localeCompare(b.name));
 
-  const cashExpected = (session.cashStartCents || 0) + cash - (session.cashOutCents || 0);
+  const helpers = session.helpers || [];
+  const helperCash = helpers.filter((x) => x.payout === 'bar').reduce((a, x) => a + x.payCents, 0);
+  const cashExpected = (session.cashStartCents || 0) + cash - (session.cashOutCents || 0) - helperCash;
   const cashCounted = session.cashEndCents ?? null;
   const missingUnits = items.reduce((a, i) => a + (i.diff != null && i.diff < 0 ? -i.diff : 0), 0);
   return {
@@ -69,7 +88,7 @@ function computeSettlement(session, sales, products = []) {
     drinksRevenueCents: cash + card - ticketRev - courseRev, ticketRevenueCents: ticketRev, ticketCount,
     courseFeeCents: courseRev, courseFees: [...fees.values()].sort((a, b) => b.revenueCents - a.revenueCents),
     tickets: [...tickets.values()].sort((a, b) => b.qty - a.qty),
-    cashStartCents: session.cashStartCents || 0, cashOutCents: session.cashOutCents || 0,
+    cashStartCents: session.cashStartCents || 0, cashOutCents: session.cashOutCents || 0, helpers, helperCashCents: helperCash,
     cashExpectedCents: cashExpected, cashCountedCents: cashCounted, cashDiffCents: cashCounted == null ? null : cashCounted - cashExpected,
     items, missingUnits, freeUnits,
     // Warenwert der Fehlmenge zum Verkaufspreis (zeigt, was der Schwund an Umsatz kostet)
@@ -87,4 +106,4 @@ const STATIONS = ['tuer', 'theke'];
 const stationOf = (session) => (session.station === 'tuer' ? 'tuer' : 'theke');
 const allowedAtStation = (station, category) => (station === 'tuer' ? TICKET_CATEGORIES.includes(category) : !TICKET_CATEGORIES.includes(category));
 
-module.exports = { computeSettlement, TICKET_CATEGORIES, COURSE_CATEGORIES, STATIONS, stationOf, allowedAtStation };
+module.exports = { computeSettlement, billedHours, buildHelpers, helperShift, TICKET_CATEGORIES, COURSE_CATEGORIES, STATIONS, stationOf, allowedAtStation };

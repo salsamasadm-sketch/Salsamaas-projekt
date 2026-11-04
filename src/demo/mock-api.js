@@ -6,8 +6,8 @@
  */
 (() => {
   const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = window.__cockpit.dashboard;
-  const { computeSettlement } = window.__cockpit.bar;
-  const KEY = 'cockpit.demo.db.v2';
+  const { computeSettlement, buildHelpers, helperShift } = window.__cockpit.bar;
+  const KEY = 'cockpit.demo.db.v3';
   const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
   let db;
   try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
@@ -103,7 +103,11 @@
     if (method === 'POST' && (m = path.match(/^\/bar\/([^/]+)\/close$/))) {
       const ses = db.barsessions[m[1]]; if (!ses) return err(404, 'not_found');
       if (ses.closedAt) return err(409, 'session_closed');
-      Object.assign(ses, { cashOutCents: 0, restock: {}, stockEnd: {}, ...body, closedBy: by, closedAt: new Date().toISOString() }); save();
+      const { helpers: hIn = [], ...rest } = body;
+      const helpers = buildHelpers(ses, hIn, uid);
+      Object.assign(ses, { cashOutCents: 0, restock: {}, stockEnd: {}, ...rest, helpers, closedBy: by, closedAt: new Date().toISOString() }); save();
+      for (const hl of helpers) db.shifts[hl.id] = helperShift(ses, hl);
+      save();
       return json(200, settle(ses));
     }
     if (method === 'GET' && (m = path.match(/^\/bar\/sessions\/([^/]+)$/))) return db.barsessions[m[1]] ? json(200, settle(db.barsessions[m[1]])) : err(404, 'not_found');
@@ -140,6 +144,7 @@
       if (!(new Date(s.end) > new Date(s.start))) return err(400, 'validation_failed', 'Ende muss nach Start liegen');
       db.shifts[s.id] = s; save(); return json(201, s);
     }
+    if (method === 'PATCH' && (m = path.match(/^\/shifts\/([^/]+)$/))) { const sh = db.shifts[m[1]]; if (!sh) return err(404, 'not_found'); sh.paid = !!body.paid; save(); return json(200, sh); }
     if (method === 'DELETE' && (m = path.match(/^\/shifts\/([^/]+)$/))) { if (!db.shifts[m[1]]) return err(404, 'not_found'); delete db.shifts[m[1]]; save(); return json(204); }
     if (method === 'GET' && path === '/settings') return json(200, mergeSettings(db.settings.main));
     if (method === 'PUT' && path === '/settings') { db.settings.main = { id: 'main', ...body }; save(); return json(200, mergeSettings(body)); }

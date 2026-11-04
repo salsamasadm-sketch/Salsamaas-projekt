@@ -124,7 +124,8 @@ test('Stunden: stempeln, nachtragen, keine Ueberschneidung, Minijob-Kosten', asy
   assert.equal('rateCents' in me.recent[0], false); // Team sieht keine Loehne
   const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
   const lenaRow = d.personnel.byStaff.find((x) => x.ref === 'lena');
-  assert.ok(lenaRow.earnedCents >= 2800 && lenaRow.earnedCents <= 2810);
+  // 2 Std. nachgetragen + gestempelte Sekunden-Schicht (aufgerundet auf 15 Min.) = 2,25 Std. x 14 €
+  assert.equal(lenaRow.earnedCents, 3150);
   // Deaktivieren sperrt sofort
   await s.call('PATCH', '/app/api/staff/lena', { token: chef, body: { active: false } });
   assert.equal((await s.call('GET', '/app/api/me', { token: lena })).status, 401);
@@ -179,4 +180,31 @@ test('Zeitraum, Vorperiode, Jahr und Kursgebuehr vor Ort', async () => {
   assert.equal(y.months[9].nights, 2);
   assert.equal(y.months[9].courseCents, 9900);
   assert.equal(y.totals.nights, 3);
+});
+
+test('Aushilfen beim Kassenabschluss: Viertelstunde aufrunden, bar mindert Kassensoll, Ueberweisung als To-do', async () => {
+  const s = await start();
+  const { chef, lena, cola } = await setup(s);
+  const ses = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', cashStartCents: 10000, stockStart: { [cola.id]: 5 } } })).body;
+  await s.call('POST', `/app/api/bar/${ses.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 2 }] } });
+  const t0 = new Date(Date.now() - 5 * 3_600_000);
+  const at = (min) => new Date(t0.getTime() + min * 60_000).toISOString();
+  const r = (await s.call('POST', `/app/api/bar/${ses.id}/close`, { token: lena, body: { cashEndCents: 10700 - 3475, stockEnd: { [cola.id]: 3 }, helpers: [
+    { name: 'Carla', start: at(0), end: at(125), rateCents: 1390, payout: 'bar' },          // 2:05 -> 2,25 Std. x 13,90 € = 31,28 €
+    { name: 'Jonas', start: at(0), end: at(180), rateCents: 1500, payout: 'ueberweisung' }, // 3,00 Std. = 45,00 €
+  ] } })).body;
+  assert.equal(r.helpers[0].hours, 2.25);
+  assert.equal(r.helpers[0].payCents, 3128);
+  assert.equal(r.helpers[1].payCents, 4500);
+  assert.equal(r.helperCashCents, 3128);
+  assert.equal(r.cashExpectedCents, 10000 + 700 - 3128);
+  const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
+  assert.ok(d.todos.some((t) => /Jonas: 45,00 € überweisen/.test(t.text)));
+  assert.ok(!d.todos.some((t) => /Carla/.test(t.text)));
+  assert.equal(d.personnel.helpers.length, 2);
+  const jonas = d.personnel.helpers.find((x) => x.name === 'Jonas');
+  await s.call('PATCH', `/app/api/shifts/${jonas.id}`, { token: chef, body: { paid: true } });
+  const d2 = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
+  assert.ok(!d2.todos.some((t) => /Jonas/.test(t.text)));
+  s.close();
 });

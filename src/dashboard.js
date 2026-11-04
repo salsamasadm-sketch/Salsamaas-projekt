@@ -1,5 +1,5 @@
 'use strict';
-const { computeSettlement } = require('./bar');
+const { computeSettlement, billedHours } = require('./bar');
 /**
  * Rechnet aus den Rohdaten die Chef-Uebersicht: Kennzahlen mit Ampel, To-dos und Verbesserungsideen.
  * Reine Funktion (keine Datenbank), damit sie leicht testbar ist.
@@ -30,9 +30,10 @@ function mergeSettings(s) {
 }
 
 /** Stunden einer Schicht; laufende Schichten zaehlen bis "jetzt". */
+/** Stunden einer Schicht; abgeschlossene werden auf die Viertelstunde aufgerundet, laufende zaehlen bis "jetzt". */
 function shiftHours(sh, now) {
-  const end = sh.end ? new Date(sh.end) : now;
-  return Math.max(0, (end - new Date(sh.start)) / 3_600_000);
+  if (sh.end) return billedHours(sh.start, sh.end);
+  return Math.max(0, (now - new Date(sh.start)) / 3_600_000);
 }
 const shiftCost = (sh, now) => Math.round(shiftHours(sh, now) * (sh.rateCents || 0));
 
@@ -103,7 +104,7 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
   const barPersonnelCost = sum(barShifts, (s) => shiftCost(s, now));
   const barPersonnelPct = barRevenue > 0 ? (barPersonnelCost / barRevenue) * 100 : null;
   const byStaff = staff.map((p) => {
-    const mine = monthShifts.filter((s) => s.staffRef === p.ref);
+    const mine = monthShifts.filter((s) => s.staffRef === p.ref && !s.helper);
     const earned = sum(mine, (s) => shiftCost(s, now));
     const mjEarned = sum(shifts.filter((s) => s.staffRef === p.ref && berlinDate(s.start).slice(0, 7) === mjMonth), (s) => shiftCost(s, now));
     return { ref: p.ref, active: p.active !== false, hours: Math.round(sum(mine, (s) => shiftHours(s, now)) * 10) / 10, earnedCents: earned, minijobMonth: mjMonth, minijobEarnedCents: mjEarned, minijobPct: cfg.minijobLimitCents ? Math.round((mjEarned / cfg.minijobLimitCents) * 100) : null };
@@ -180,6 +181,10 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
   if (openEnr.length > 0) todos.push({ level: openPaymentsPct > t.openPaymentsPct ? 'bad' : 'warn', tab: 'kurse', text: `${openEnr.length} offene Zahlungen über ${eur(openOwed)} nachhalten.` });
   for (const p of byStaff.filter((x) => x.active && x.minijobPct >= 85)) {
     todos.push({ level: p.minijobPct >= 100 ? 'bad' : 'warn', tab: 'personal', text: `${p.ref} hat im ${mjMonth.split('-').reverse().join('/')} ${p.minijobPct} % der Minijob-Grenze erreicht (${eur(p.minijobEarnedCents)} von ${eur(cfg.minijobLimitCents)}). Einsätze diesen Monat planen.` });
+  }
+  // Aushilfen, deren Lohn noch ueberwiesen werden muss (unabhaengig vom Zeitraum)
+  for (const s of shifts.filter((x) => x.helper && x.payout === 'ueberweisung' && !x.paid)) {
+    todos.push({ level: 'warn', tab: 'personal', text: `Aushilfe ${s.staffRef}: ${eur(shiftCost(s, now))} überweisen (Minijob) – ${shiftHours(s, now).toLocaleString('de-DE')} Std. am ${berlinDate(s.start).split('-').reverse().join('.')}.` });
   }
   if (fixedMonthly === 0) todos.push({ level: 'info', tab: 'ziele', text: 'Fixkosten (Miete usw.) hinterlegen, damit das Ergebnis stimmt.' });
 
@@ -267,7 +272,7 @@ function computeDashboard({ month, from, to, compare = true, now = new Date(), c
     insights,
     bar: { revenueCents: barRevenue, ticketRevenueCents: ticketRevenue, ticketMix: [...ticketMix.values()].sort((a, b) => b.qty - a.qty), guests, nights: nightsMap.size, cashDiffCents: cashDiff, missingUnits, missingValueCents: missingValue, daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)), byWeekday: wdRows, topProducts: [...top.values()].filter((x) => x.qty > 0).sort((a, b) => b.revenueCents - a.revenueCents), sessions: bars.sort((a, b) => b.date.localeCompare(a.date)) },
     shopping,
-    personnel: { totalCents: personnelCost, barCents: barPersonnelCost, byStaff },
+    personnel: { totalCents: personnelCost, barCents: barPersonnelCost, byStaff, helpers: monthShifts.filter((s) => s.helper).map((s) => ({ id: s.id, name: s.staffRef, date: berlinDate(s.start), hours: shiftHours(s, now), payCents: shiftCost(s, now), payout: s.payout, paid: !!s.paid, location: s.location })) },
     courses: { utilizationPct, participants, capacity: cap, openCount: openEnr.length, openOwedCents: openOwed, rows: courseRows },
     totals: { incomeCents: income, costsCents: costs, fixedCents: fixed, profitCents: profit },
   };

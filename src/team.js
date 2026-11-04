@@ -6,7 +6,7 @@ const { rateLimit } = require('express-rate-limit');
 const { hashPin, verifyPin } = require('./session');
 const { sha256 } = require('./auth');
 const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = require('./dashboard');
-const { computeSettlement, STATIONS, stationOf, allowedAtStation } = require('./bar');
+const { computeSettlement, buildHelpers, helperShift, STATIONS, stationOf, allowedAtStation } = require('./bar');
 const S = require('./schemas');
 
 /**
@@ -40,7 +40,9 @@ const productPatch = z.object({ name: pname.optional(), priceCents: cents(100_00
 const stock = z.record(S.id, z.number().int().min(0).max(10_000)).refine((o) => Object.keys(o).length <= 300, 'zu viele Artikel');
 const sessionOpen = z.object({ location: LOC, station: z.enum(STATIONS).default('theke'), cashStartCents: cents(10_000_000), stockStart: stock.default({}) }).strict();
 const saleSchema = z.object({ note: z.string().trim().min(1).max(60).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen').optional(), payment: z.enum(['bar', 'karte', 'gratis']), items: z.array(z.object({ productId: S.id, qty: z.number().int().min(1).max(50) }).strict()).min(1).max(30) }).strict();
-const sessionClose = z.object({ cashEndCents: cents(10_000_000), cashOutCents: cents(10_000_000).default(0), stockEnd: stock.default({}), restock: stock.default({}), guests: z.number().int().min(0).max(3000).optional(), note: note.optional() }).strict();
+const helperIn = z.object({ name: z.string().trim().min(2).max(40).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen'), start: iso, end: iso, rateCents: cents(10_000), payout: z.enum(['bar', 'ueberweisung']) }).strict()
+  .refine((h) => new Date(h.end) > new Date(h.start) && new Date(h.end) - new Date(h.start) <= 16 * 3_600_000, 'Aushilfe: Ende muss nach Beginn liegen (max. 16 Std.)');
+const sessionClose = z.object({ helpers: z.array(helperIn).max(10).default([]), cashEndCents: cents(10_000_000), cashOutCents: cents(10_000_000).default(0), stockEnd: stock.default({}), restock: stock.default({}), guests: z.number().int().min(0).max(3000).optional(), note: note.optional() }).strict();
 const staffCreate = z.object({ ref, pin, hourlyRateCents: cents(20_000), active: z.boolean().default(true) }).strict();
 const staffPatch = z.object({ pin: pin.optional(), hourlyRateCents: cents(20_000).optional(), active: z.boolean().optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
@@ -252,7 +254,10 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const ses = await loadOpen(req.params.id);
     if (!ses) return res.status(404).json({ error: 'not_found' });
     if (ses.closedAt) return res.status(409).json({ error: 'session_closed' });
-    const next = { ...ses, ...d, closedBy: by(req), closedAt: new Date().toISOString() };
+    const { helpers: helperInput, ...rest } = d;
+    const helpers = buildHelpers(ses, helperInput, () => crypto.randomUUID());
+    const next = { ...ses, ...rest, helpers, closedBy: by(req), closedAt: new Date().toISOString() };
+    for (const hl of helpers) await store.putDoc('shifts', helperShift(next, hl));
     await store.putDoc('barsessions', next); log(req, 'bar_closed');
     res.json(await settlement(next));
   }));
@@ -364,6 +369,15 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const s = { id: crypto.randomUUID(), ...d, staffRef: p.ref, start: new Date(d.start).toISOString(), end: new Date(d.end).toISOString(), rateCents: p.hourlyRateCents, createdBy: 'chef' };
     await store.putDoc('shifts', s); log(req, 'shift_added');
     res.status(201).json(s);
+  }));
+  // Aushilfe: Ueberweisung erledigt markieren
+  r.patch('/shifts/:id', owner, wrap(async (req, res) => {
+    const d = parse(z.object({ paid: z.boolean() }).strict(), req.body, res); if (!d) return;
+    const cur = S.id.safeParse(req.params.id).success ? await store.getDoc('shifts', req.params.id) : null;
+    if (!cur) return res.status(404).json({ error: 'not_found' });
+    const next = { ...cur, paid: d.paid, paidAt: d.paid ? new Date().toISOString() : null };
+    await store.putDoc('shifts', next); log(req, 'shift_paid');
+    res.json(next);
   }));
   r.delete('/shifts/:id', owner, wrap(async (req, res) => {
     if (!S.id.safeParse(req.params.id).success) return res.status(400).json({ error: 'invalid_id' });

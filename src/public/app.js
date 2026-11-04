@@ -333,6 +333,43 @@
     const out = h('input', { inputmode: 'decimal', value: '0,00' });
     const guests = h('input', { type: 'number', inputmode: 'numeric', min: 0, placeholder: 'nur falls kein Eintritt gebucht' });
     const note = h('input', { maxlength: 200, placeholder: 'optional, z. B. Eis gekauft' });
+    // Aushilfen (nicht registriert): von–bis, Stundenlohn, Auszahlung bar oder Ueberweisung
+    const helperRows = [];
+    const helperBox = h('div', { class: 'helpers' });
+    const helperSum = h('p', { class: 'small muted helper-sum' });
+    const quarterHours = (a, b) => Math.ceil(Math.max(0, b - a) / 900_000) / 4;
+    const helperTimes = (r) => {
+      if (!r.from.value || !r.to.value) return null;
+      const a = new Date(`${ses.date}T${r.from.value}`); let b = new Date(`${ses.date}T${r.to.value}`);
+      if (b <= a) b = new Date(b.getTime() + 86_400_000); // ueber Mitternacht
+      return { a, b };
+    };
+    const updateHelpers = () => {
+      let cashTotal = 0, transfer = 0;
+      for (const r of helperRows) {
+        const t = helperTimes(r); const rate = toCents(r.rate.value);
+        if (!t || rate == null) { r.out.textContent = '–'; continue; }
+        const hrs = quarterHours(t.a, t.b); const pay = Math.round(hrs * rate);
+        r.out.textContent = `${hrs.toLocaleString('de-DE')} Std. = ${eur(pay)}`;
+        if (r.payout.value === 'bar') cashTotal += pay; else transfer += pay;
+      }
+      helperSum.textContent = helperRows.length ? `Bar aus dieser Kasse: ${eur(cashTotal)} (wird vom Kassensoll abgezogen) · Überweisung: ${eur(transfer)}` : '';
+    };
+    const addHelper = () => {
+      const r = {
+        name: h('input', { maxlength: 40, required: true, placeholder: 'Vorname' }),
+        from: h('input', { type: 'time', required: true }),
+        to: h('input', { type: 'time', required: true }),
+        rate: h('input', { inputmode: 'decimal', required: true, value: '13,90' }),
+        payout: select({ bar: 'Bar ausgezahlt (aus dieser Kasse)', ueberweisung: 'Wird überwiesen (Minijob)' }, 'bar'),
+        out: h('b', { class: 'helper-out' }, '–'),
+      };
+      const row = h('div', { class: 'helper-row', oninput: updateHelpers, onchange: updateHelpers },
+        h('div', { class: 'grid2' }, field('Name', r.name), field('Stundenlohn €', r.rate), field('Von', r.from), field('Bis', r.to)),
+        field('Auszahlung', r.payout),
+        h('div', { class: 'row spread' }, r.out, h('button', { type: 'button', class: 'link', onclick: () => { helperRows.splice(helperRows.indexOf(r), 1); row.remove(); updateHelpers(); } }, 'entfernen')));
+      helperRows.push(r); helperBox.append(row); updateHelpers(); r.name.focus();
+    };
     const restock = stockTable(products, {}, { label: 'Nachgefüllt', value: () => '' });
     const restockInputs = restock.el.querySelectorAll('input'); restockInputs.forEach((i) => { i.required = false; i.value = '0'; });
     const soldMap = new Map(set.items.map((i) => [i.productId, i.sold]));
@@ -342,7 +379,8 @@
       if (c == null || o == null) throw new Error('Beträge prüfen');
       if (!await ask('Kasse jetzt schließen? Danach kann nichts mehr gebucht werden.')) return;
       const door = station === 'tuer';
-      const result = await api('POST', `/bar/${ses.id}/close`, { cashEndCents: c, cashOutCents: o, stockEnd: door ? {} : end.read(), restock: door ? {} : restock.read(), ...(guests.value && { guests: Number(guests.value) }), ...(note.value.trim() && { note: note.value.trim() }) });
+      const helpers = helperRows.map((r) => { const t = helperTimes(r); const rate = toCents(r.rate.value); if (!t || rate == null || r.name.value.trim().length < 2) throw new Error('Aushilfe: Name, Von, Bis und Stundenlohn ausfüllen'); return { name: r.name.value.trim(), start: t.a.toISOString(), end: t.b.toISOString(), rateCents: rate, payout: r.payout.value }; });
+      const result = await api('POST', `/bar/${ses.id}/close`, { helpers, cashEndCents: c, cashOutCents: o, stockEnd: door ? {} : end.read(), restock: door ? {} : restock.read(), ...(guests.value && { guests: Number(guests.value) }), ...(note.value.trim() && { note: note.value.trim() }) });
       toast('Kasse abgeschlossen');
       route('abrechnung', result);
     }) },
@@ -350,6 +388,9 @@
     h('p', { class: 'muted small' }, station === 'tuer' ? 'Bargeld in der Tür-Kasse zählen (inklusive Wechselgeld). Die Gästezahl kommt automatisch aus den verkauften Tickets.' : 'Bargeld zählen (inklusive Wechselgeld) und den Bestand an der Bar zählen. Die App vergleicht danach automatisch mit den Verkäufen.'),
     h('div', { class: 'grid2' }, field('Bargeld gezählt in €', cash), field('Entnahmen in € (Belege)', out), station !== 'tuer' && field('Gäste (ca.)', guests), field('Notiz', note)),
     station !== 'tuer' && h('details', {}, h('summary', {}, 'Während des Abends nachgefüllt? (aus dem Lager)'), restock.el),
+    h('h2', {}, 'Aushilfen (nicht registriert)'),
+    h('div', { class: 'card inset' }, h('p', { class: 'small muted' }, 'Arbeitszeit wird automatisch auf die Viertelstunde aufgerundet. Bar ausgezahlter Lohn wird vom Kassensoll abgezogen, Überweisungen landen beim Chef als To-do.'), helperBox, helperSum,
+      h('button', { type: 'button', class: 'btn secondary', onclick: addHelper }, '+ Aushilfe hinzufügen')),
     station !== 'tuer' && h('h2', {}, 'Inventar – Endbestand (gezählt)'), station !== 'tuer' && end.el,
     h('div', { class: 'row' }, h('button', { class: 'btn', type: 'submit' }, 'Abschließen'), h('button', { class: 'btn secondary', type: 'button', onclick: () => route('kasse') }, 'Zurück zur Kasse')));
   }
@@ -374,11 +415,14 @@
       s.courseFees?.length > 0 && h('div', { class: 'card table-wrap' }, h('b', {}, 'Kursgebühren vor Ort'), h('table', {},
         h('tr', {}, h('th', {}, 'Art'), h('th', { class: 'num' }, 'Anzahl'), h('th', { class: 'num' }, 'Betrag'), h('th', {}, 'Für')),
         s.courseFees.map((f) => h('tr', {}, h('td', {}, f.name), h('td', { class: 'num' }, f.qty), h('td', { class: 'num' }, eur(f.revenueCents)), h('td', { class: 'small' }, f.refs.join(', ') || '–'))))),
+      s.helpers?.length > 0 && h('div', { class: 'card table-wrap' }, h('b', {}, 'Aushilfen'), h('table', {},
+        h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Zeit'), h('th', { class: 'num' }, 'Std.'), h('th', { class: 'num' }, 'Lohn'), h('th', {}, 'Auszahlung')),
+        s.helpers.map((x) => h('tr', {}, h('td', {}, x.name), h('td', {}, `${time(x.start)}–${time(x.end)}`), h('td', { class: 'num' }, x.hours.toLocaleString('de-DE')), h('td', { class: 'num' }, eur(x.payCents)), h('td', {}, x.payout === 'bar' ? 'bar ausgezahlt' : 'Überweisung'))))),
       s.tickets.length > 0 && h('div', { class: 'card table-wrap' }, h('b', {}, 'Gäste nach Ticket'), h('table', {},
         h('tr', {}, h('th', {}, 'Ticket'), h('th', { class: 'num' }, 'Personen'), h('th', { class: 'num' }, 'Umsatz')),
         s.tickets.map((t) => h('tr', {}, h('td', {}, t.name), h('td', { class: 'num' }, t.qty), h('td', { class: 'num' }, eur(t.revenueCents)))))),
       h('div', { class: 'card' },
-        h('p', { class: 'small muted' }, `Kasse: Anfang ${eur(s.cashStartCents)} + Bareinnahmen ${eur(s.cashSalesCents)} − Entnahmen ${eur(s.cashOutCents)} = Soll ${eur(s.cashExpectedCents)}`),
+        h('p', { class: 'small muted' }, `Kasse: Anfang ${eur(s.cashStartCents)} + Bareinnahmen ${eur(s.cashSalesCents)} − Entnahmen ${eur(s.cashOutCents)}${s.helperCashCents ? ` − Aushilfen bar ${eur(s.helperCashCents)}` : ''} = Soll ${eur(s.cashExpectedCents)}`),
         s.station !== 'tuer' && h('div', { class: 'table-wrap' }, h('table', {},
           h('tr', {}, h('th', {}, 'Artikel'), h('th', { class: 'num' }, 'Anfang'), h('th', { class: 'num' }, '+Nachf.'), h('th', { class: 'num' }, 'Verkauft'), h('th', { class: 'num' }, 'Soll'), h('th', { class: 'num' }, 'Gezählt'), h('th', { class: 'num' }, 'Diff.'), h('th', { class: 'num' }, 'Umsatz')),
           s.items.map((i) => h('tr', {}, h('td', {}, i.name), h('td', { class: 'num' }, i.start ?? '–'), h('td', { class: 'num' }, i.restock || ''), h('td', { class: 'num' }, i.sold), h('td', { class: 'num' }, i.expectedEnd), h('td', { class: 'num' }, i.countedEnd ?? '–'), diffCell(i.diff), h('td', { class: 'num' }, eur(i.revenueCents)))))),
@@ -656,9 +700,15 @@
           h('div', { class: 'grid3' }, field('Kürzel', ref), field('PIN', pin), field('Stundenlohn €', rate)),
           h('p', { class: 'muted small' }, 'Nur Kürzel oder Vorname, keine vollen Namen. Die PIN gibst du der Person persönlich.'),
           h('button', { class: 'btn', type: 'submit' }, 'Anlegen'))),
+      d.personnel.helpers.length > 0 && h('div', {}, h('h2', {}, 'Aushilfen'),
+        h('div', { class: 'card table-wrap' }, h('table', {},
+          h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Datum'), h('th', {}, 'Standort'), h('th', { class: 'num' }, 'Std.'), h('th', { class: 'num' }, 'Lohn'), h('th', {}, 'Auszahlung'), h('th', {}, '')),
+          d.personnel.helpers.map((x) => h('tr', {}, h('td', {}, x.name), h('td', {}, dmy(x.date)), h('td', {}, LOC[x.location]), h('td', { class: 'num' }, x.hours.toLocaleString('de-DE')), h('td', { class: 'num' }, eur(x.payCents)),
+            h('td', {}, x.payout === 'bar' ? h('span', { class: 'chip ok' }, 'bar bezahlt') : x.paid ? h('span', { class: 'chip ok' }, 'überwiesen') : h('span', { class: 'chip warn' }, 'überweisen')),
+            h('td', {}, x.payout === 'ueberweisung' && h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/shifts/${x.id}`, { paid: !x.paid }); toast(x.paid ? 'Wieder offen' : 'Als überwiesen markiert'); route('personal'); }) }, x.paid ? 'zurücksetzen' : 'als überwiesen markieren'))))))),
       h('h2', {}, 'Schichten'),
       h('div', { class: 'card table-wrap' }, shifts.length ? h('table', {}, h('tr', {}, h('th', {}, 'Wer'), h('th', {}, 'Wann'), h('th', {}, 'Was'), h('th', { class: 'num' }, 'Std.'), h('th', { class: 'num' }, 'Kosten'), h('th', {}, '')),
-        shifts.map((s) => h('tr', {}, h('td', {}, s.staffRef), h('td', {}, `${dateTime(s.start)}–${s.end ? time(s.end) : 'läuft'}`), h('td', {}, `${KIND[s.kind]}, ${LOC[s.location]}`), h('td', { class: 'num' }, hours(s.start, s.end).toFixed(1).replace('.', ',')), h('td', { class: 'num' }, eur(Math.round(hours(s.start, s.end) * s.rateCents))),
+        shifts.map((s) => h('tr', {}, h('td', {}, s.helper ? `${s.staffRef} (Aushilfe)` : s.staffRef), h('td', {}, `${dateTime(s.start)}–${s.end ? time(s.end) : 'läuft'}`), h('td', {}, `${KIND[s.kind]}, ${LOC[s.location]}`), h('td', { class: 'num' }, hours(s.start, s.end).toFixed(1).replace('.', ',')), h('td', { class: 'num' }, eur(Math.round(hours(s.start, s.end) * s.rateCents))),
           h('td', {}, h('button', { type: 'button', class: 'link', onclick: run(async () => { if (!await ask('Schicht löschen?')) return; await api('DELETE', `/shifts/${s.id}`); route('personal'); }) }, 'löschen'))))) : h('p', { class: 'muted' }, 'Keine Schichten in diesem Monat.')),
       staff.length > 0 && h('details', { class: 'card' }, h('summary', {}, '+ Schicht nachtragen / korrigieren'),
         h('form', { onsubmit: run(async () => { await api('POST', '/shifts', { staffRef: ms.staffRef.value, kind: ms.kind.value, location: ms.location.value, start: new Date(ms.start.value).toISOString(), end: new Date(ms.end.value).toISOString() }); toast('Gespeichert'); route('personal'); }) },
