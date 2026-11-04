@@ -5,7 +5,7 @@
  * Wird nur von scripts/build-demo.js in die Demo-Seite eingebaut.
  */
 (() => {
-  const { computeDashboard, mergeSettings, berlinDate } = window.__cockpit.dashboard;
+  const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = window.__cockpit.dashboard;
   const { computeSettlement } = window.__cockpit.bar;
   const KEY = 'cockpit.demo.db.v1';
   const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
@@ -89,7 +89,7 @@
       if (method === 'GET') return json(200, list('sales').filter((x) => x.sessionId === ses.id).sort((a, b) => b.at.localeCompare(a.at)));
       if (ses.closedAt) return err(409, 'session_closed');
       const items = body.items.map((it) => ({ productId: it.productId, qty: it.qty, priceCents: db.products[it.productId].priceCents }));
-      const sale = { id: uid(), sessionId: ses.id, at: new Date().toISOString(), by, payment: body.payment, items };
+      const sale = { id: uid(), sessionId: ses.id, at: new Date().toISOString(), by, payment: body.payment, items, ...(body.note && { note: String(body.note).slice(0, 60) }) };
       db.sales[sale.id] = sale; save(); return json(201, { id: sale.id });
     }
     if (method === 'DELETE' && (m = path.match(/^\/bar\/([^/]+)\/sales\/([^/]+)$/))) {
@@ -107,10 +107,15 @@
     // --- nur Chef ---
     const deny = only(); if (deny) return deny;
     const month = /^\d{4}-\d{2}$/.test(query.get('month') || '') ? query.get('month') : null;
+    const qf = query.get('from'), qt = query.get('to');
+    const range = /^\d{4}-\d{2}-\d{2}$/.test(qf || '') && /^\d{4}-\d{2}-\d{2}$/.test(qt || '') && qf <= qt ? { from: qf, to: qt } : month ? rangeOf({ month }) : null;
+    const inR = (d) => !range || (d >= range.from && d <= range.to);
+    const data = () => ({ courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main });
+    if (method === 'GET' && path === '/year') return json(200, computeYear({ year: Number(query.get('year')) || Number(today().slice(0, 4)), ...data() }));
     if (method === 'GET' && path === '/dashboard') {
-      return json(200, computeDashboard({ month: month || today().slice(0, 7), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main }));
+      return json(200, computeDashboard({ ...(range || rangeOf({ month: today().slice(0, 7) })), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main }));
     }
-    if (method === 'GET' && path === '/bar/sessions') return json(200, list('barsessions').filter((b) => !month || b.date.startsWith(month)).map(settle).sort((a, b) => b.date.localeCompare(a.date)));
+    if (method === 'GET' && path === '/bar/sessions') return json(200, list('barsessions').filter((b) => inR(b.date)).map(settle).sort((a, b) => b.date.localeCompare(a.date)));
     if (method === 'GET' && path === '/staff') return json(200, list('staff').map(publicStaff).sort((a, b) => a.ref.localeCompare(b.ref)));
     if (method === 'POST' && path === '/staff') {
       const id = String(body.ref).toLowerCase();
@@ -124,7 +129,7 @@
       if (pin !== undefined && !/^\d{6,8}$/.test(pin)) return err(400, 'validation_failed', 'PIN: 6–8 Ziffern');
       Object.assign(p, rest); save(); return json(200, publicStaff(p));
     }
-    if (method === 'GET' && path === '/shifts') return json(200, list('shifts').filter((s) => !month || berlinDate(s.start).startsWith(month)).sort((a, b) => b.start.localeCompare(a.start)));
+    if (method === 'GET' && path === '/shifts') return json(200, list('shifts').filter((s) => inR(berlinDate(s.start))).sort((a, b) => b.start.localeCompare(a.start)));
     if (method === 'POST' && path === '/shifts') {
       const p = db.staff[String(body.staffRef).toLowerCase()]; if (!p) return err(404, 'not_found');
       const s = { id: uid(), ...body, staffRef: p.ref, start: new Date(body.start).toISOString(), end: new Date(body.end).toISOString(), rateCents: p.hourlyRateCents };

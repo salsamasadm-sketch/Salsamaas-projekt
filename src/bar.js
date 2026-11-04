@@ -1,6 +1,8 @@
 'use strict';
 /** Kategorien ohne Inventar: Eintritt und Workshops (zaehlen als Gaeste). */
 const TICKET_CATEGORIES = ['eintritt', 'workshop'];
+/** Kursgebuehren vor Ort: kein Inventar, keine Gaeste, zaehlen zu den Kurseinnahmen. */
+const COURSE_CATEGORIES = ['kursgebuehr'];
 /**
  * Kassenabrechnung eines Bar-Abends (reine Funktion).
  *
@@ -13,8 +15,10 @@ const TICKET_CATEGORIES = ['eintritt', 'workshop'];
 function computeSettlement(session, sales, products = []) {
   const name = new Map(products.map((p) => [p.id, p.name]));
   const isTicket = new Set(products.filter((p) => TICKET_CATEGORIES.includes(p.category)).map((p) => p.id));
+  const isCourse = new Set(products.filter((p) => COURSE_CATEGORIES.includes(p.category)).map((p) => p.id));
   const tickets = new Map();
-  let ticketRev = 0, ticketCount = 0;
+  const fees = new Map();
+  let ticketRev = 0, ticketCount = 0, courseRev = 0;
   const sold = new Map(); // productId -> { qty, revenueCents }
   let cash = 0, card = 0, count = 0, freeUnits = 0;
   for (const s of sales) {
@@ -22,6 +26,13 @@ function computeSettlement(session, sales, products = []) {
     for (const it of s.items) {
       const r = sold.get(it.productId) || { qty: 0, revenueCents: 0 };
       const value = s.payment === 'gratis' ? 0 : it.qty * it.priceCents;
+      if (isCourse.has(it.productId)) {
+        const f = fees.get(it.productId) || { productId: it.productId, name: name.get(it.productId) || it.productId, qty: 0, revenueCents: 0, refs: [] };
+        f.qty += it.qty; f.revenueCents += value; if (s.note) f.refs.push(s.note); fees.set(it.productId, f);
+        courseRev += value;
+        if (s.payment === 'karte') card += value; else if (s.payment !== 'gratis') cash += value;
+        continue;
+      }
       if (isTicket.has(it.productId)) {
         const t = tickets.get(it.productId) || { productId: it.productId, name: name.get(it.productId) || it.productId, qty: 0, revenueCents: 0 };
         t.qty += it.qty; t.revenueCents += value; tickets.set(it.productId, t);
@@ -37,7 +48,7 @@ function computeSettlement(session, sales, products = []) {
   const start = session.stockStart || {};
   const end = session.stockEnd || null;
   const restock = session.restock || {};
-  const ids = new Set([...Object.keys(start), ...sold.keys(), ...(end ? Object.keys(end) : [])].filter((id) => !isTicket.has(id)));
+  const ids = new Set([...Object.keys(start), ...sold.keys(), ...(end ? Object.keys(end) : [])].filter((id) => !isTicket.has(id) && !isCourse.has(id)));
   const items = [...ids].map((id) => {
     const qtySold = sold.get(id)?.qty || 0;
     const expectedEnd = (start[id] ?? 0) + (restock[id] || 0) - qtySold;
@@ -55,7 +66,8 @@ function computeSettlement(session, sales, products = []) {
   return {
     sessionId: session.id, date: session.date, location: session.location, status: session.closedAt ? 'closed' : 'open',
     salesCount: count, revenueCents: cash + card, cashSalesCents: cash, cardSalesCents: card,
-    drinksRevenueCents: cash + card - ticketRev, ticketRevenueCents: ticketRev, ticketCount,
+    drinksRevenueCents: cash + card - ticketRev - courseRev, ticketRevenueCents: ticketRev, ticketCount,
+    courseFeeCents: courseRev, courseFees: [...fees.values()].sort((a, b) => b.revenueCents - a.revenueCents),
     tickets: [...tickets.values()].sort((a, b) => b.qty - a.qty),
     cashStartCents: session.cashStartCents || 0, cashOutCents: session.cashOutCents || 0,
     cashExpectedCents: cashExpected, cashCountedCents: cashCounted, cashDiffCents: cashCounted == null ? null : cashCounted - cashExpected,
@@ -67,4 +79,4 @@ function computeSettlement(session, sales, products = []) {
   };
 }
 
-module.exports = { computeSettlement, TICKET_CATEGORIES };
+module.exports = { computeSettlement, TICKET_CATEGORIES, COURSE_CATEGORIES };

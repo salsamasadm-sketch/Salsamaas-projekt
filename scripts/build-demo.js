@@ -26,6 +26,12 @@ const safe = (js) => js.replace(/<\/script/gi, '<\\/script');
   for (const b of Object.values(db.barsessions)) counts[b.date.slice(0, 7)] = (counts[b.date.slice(0, 7)] || 0) + 1;
   const month = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
 
+  // Echtes Logo einbetten, falls vorhanden (src/public/logo.svg oder logo.png)
+  let logo = '';
+  for (const [f, type] of [['logo.svg', 'image/svg+xml'], ['logo.png', 'image/png']]) {
+    const fp = path.join(root, 'src', 'public', f);
+    if (!logo && fs.existsSync(fp)) logo = `data:${type};base64,${fs.readFileSync(fp).toString('base64')}`;
+  }
   const html = `<title>Salsamás Cockpit</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#14161b">
@@ -37,7 +43,7 @@ ${read('src/public/style.css')}
 </style>
 <div class="demobar"><span>Demo mit Beispieldaten · Änderungen bleiben nur in diesem Browser</span><button type="button" id="demo-reset">Demo zurücksetzen</button></div>
 <header class="top">
-  <div class="brand"><span class="wordmark">Salsamás</span><span class="tag">Cockpit</span></div>
+  <div class="brand">${logo ? `<img class="logo-img" src="${logo}" alt="Salsamás">` : ''}<span class="wordmark">Salsamás</span><span class="tag">Cockpit</span></div>
   <button id="logout" class="ghost hidden" type="button">Abmelden</button>
 </header>
 <nav id="tabs" class="tabs hidden"></nav>

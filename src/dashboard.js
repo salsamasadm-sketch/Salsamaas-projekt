@@ -45,10 +45,37 @@ function status(value, target, dir) {
   return off <= 0.15 ? 'warn' : 'bad';
 }
 
-function computeDashboard({ month, now = new Date(), courses = [], enrollments = [], staff = [], shifts = [], barsessions = [], sales = [], products = [], settings }) {
+// Zeitraum: entweder ein Monat (YYYY-MM) oder von/bis (YYYY-MM-DD, jeweils inklusive)
+function rangeOf({ month, from, to }) {
+  if (from && to) return { from, to };
+  const [y, m] = month.split('-').map(Number);
+  return { from: `${month}-01`, to: `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}` };
+}
+const addDays = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000) + 1;
+const isFullMonth = (r) => r.from.endsWith('-01') && rangeOf({ month: r.from.slice(0, 7) }).to === r.to;
+/** Vorperiode gleicher Laenge (bei ganzen Monaten: der Vormonat) */
+function previousRange(r) {
+  if (isFullMonth(r)) { const [y, m] = r.from.split('-').map(Number); const pm = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; return rangeOf({ month: pm }); }
+  const n = daysBetween(r.from, r.to);
+  return { from: addDays(r.from, -n), to: addDays(r.from, -1) };
+}
+/** Fixkosten anteilig pro Tag (Monatsbetrag / Tage des Monats) */
+function proratedFixed(monthlyCents, r) {
+  let total = 0;
+  for (let d = r.from, i = 0; d <= r.to && i < 4000; d = addDays(d, 1), i++) {
+    const [y, m] = d.split('-').map(Number);
+    total += monthlyCents / new Date(Date.UTC(y, m, 0)).getUTCDate();
+  }
+  return Math.round(total);
+}
+
+function computeDashboard({ month, from, to, compare = true, now = new Date(), courses = [], enrollments = [], staff = [], shifts = [], barsessions = [], sales = [], products = [], settings }) {
   const cfg = mergeSettings(settings);
   const t = cfg.targets;
-  const inMonth = (date) => date && date.slice(0, 7) === month;
+  const range = rangeOf({ month, from, to });
+  const inMonth = (date) => !!date && date >= range.from && date <= range.to; // = im gewaehlten Zeitraum
+  const mjMonth = range.to.slice(0, 7); // Minijob-Grenze gilt pro Kalendermonat
   const today = berlinDate(now);
 
   // --- Bar ---
@@ -75,7 +102,8 @@ function computeDashboard({ month, now = new Date(), courses = [], enrollments =
   const byStaff = staff.map((p) => {
     const mine = monthShifts.filter((s) => s.staffRef === p.ref);
     const earned = sum(mine, (s) => shiftCost(s, now));
-    return { ref: p.ref, active: p.active !== false, hours: Math.round(sum(mine, (s) => shiftHours(s, now)) * 10) / 10, earnedCents: earned, minijobPct: cfg.minijobLimitCents ? Math.round((earned / cfg.minijobLimitCents) * 100) : null };
+    const mjEarned = sum(shifts.filter((s) => s.staffRef === p.ref && berlinDate(s.start).slice(0, 7) === mjMonth), (s) => shiftCost(s, now));
+    return { ref: p.ref, active: p.active !== false, hours: Math.round(sum(mine, (s) => shiftHours(s, now)) * 10) / 10, earnedCents: earned, minijobMonth: mjMonth, minijobEarnedCents: mjEarned, minijobPct: cfg.minijobLimitCents ? Math.round((mjEarned / cfg.minijobLimitCents) * 100) : null };
   });
 
   // --- Kurse (aktuelles Angebot) ---
@@ -90,20 +118,22 @@ function computeDashboard({ month, now = new Date(), courses = [], enrollments =
   const openOwed = sum(openEnr, (e) => Math.max(0, (priceOf.get(e.courseId) || 0) - (e.amountPaidCents || 0)));
   const openPaymentsPct = enrollments.length > 0 ? (openEnr.length / enrollments.length) * 100 : null;
   // Prototyp-Annahme: Kurseinnahme zaehlt im Monat der Anmeldung.
-  const courseRevenue = sum(enrollments.filter((e) => inMonth(berlinDate(e.createdAt))), (e) => e.amountPaidCents || 0);
+  const courseFeesPos = sum(bars, (b) => b.courseFeeCents || 0); // vor Ort an der Kasse kassiert
+  const courseRevenue = sum(enrollments.filter((e) => inMonth(berlinDate(e.createdAt))), (e) => e.amountPaidCents || 0) + courseFeesPos;
   const courseRows = courses.map((c) => {
     const es = enrollments.filter((e) => e.courseId === c.id);
     return { id: c.id, title: c.title, location: c.location, weekday: c.weekday, startTime: c.startTime, published: c.published, capacity: c.capacity, participants: es.length, utilizationPct: c.capacity ? Math.round((es.length / c.capacity) * 100) : null, open: es.filter((e) => OPEN.includes(e.paymentStatus)).length };
   });
 
   // --- Gesamt ---
-  const fixed = sum(Object.values(cfg.fixedCostsCents), (v) => v || 0);
+  const fixedMonthly = sum(Object.values(cfg.fixedCostsCents), (v) => v || 0);
+  const fixed = proratedFixed(fixedMonthly, range);
   const income = barRevenue + ticketRevenue + courseRevenue;
   const costs = personnelCost + fixed;
   const profit = income - costs;
 
   const kpis = [
-    { id: 'profit', label: 'Ergebnis Monat', unit: 'eur', value: profit, hint: `Einnahmen ${eur(income)} − Kosten ${eur(costs)}`, status: fixed === 0 ? 'none' : profit >= 0 ? 'ok' : 'bad' },
+    { id: 'profit', label: 'Ergebnis Monat', unit: 'eur', value: profit, hint: `Einnahmen ${eur(income)} − Kosten ${eur(costs)}`, status: fixedMonthly === 0 ? 'none' : profit >= 0 ? 'ok' : 'bad' },
     { id: 'ticketRevenue', label: 'Eintritt & Workshops', unit: 'eur', value: ticketRevenue, hint: `${sum(bars, (b) => b.ticketCount)} Tickets`, status: 'none' },
     { id: 'barRevenue', label: 'Getränke-Umsatz', unit: 'eur', value: barRevenue, hint: `${bars.length} Abende${guests ? `, ${guests} Gäste` : ''}`, status: 'none' },
     { id: 'cashDiff', label: 'Kassendifferenz', unit: 'eur', value: cashDiff, hint: `${closed.length} Abrechnungen`, status: cashDiff == null ? 'none' : Math.abs(cashDiff) <= 500 ? 'ok' : Math.abs(cashDiff) <= 2000 ? 'warn' : 'bad' },
@@ -113,7 +143,7 @@ function computeDashboard({ month, now = new Date(), courses = [], enrollments =
     { id: 'personnelCost', label: 'Personalkosten', unit: 'eur', value: personnelCost, hint: `davon Bar ${eur(barPersonnelCost)}`, status: 'none' },
     { id: 'utilizationPct', label: 'Kurs-Auslastung', unit: 'pct', value: utilizationPct, target: t.utilizationPct, status: status(utilizationPct, t.utilizationPct, 'min') },
     { id: 'openPaymentsPct', label: 'Offene Zahlungen', unit: 'pct', value: openPaymentsPct, target: t.openPaymentsPct, hint: `${openEnr.length} offen, ${eur(openOwed)}`, status: status(openPaymentsPct, t.openPaymentsPct, 'max') },
-    { id: 'courseRevenue', label: 'Kurseinnahmen', unit: 'eur', value: courseRevenue, status: 'none' },
+    { id: 'courseRevenue', label: 'Kurseinnahmen', unit: 'eur', value: courseRevenue, hint: courseFeesPos ? `davon vor Ort ${eur(courseFeesPos)}` : null, status: 'none' },
   ];
 
   // --- To-dos: was jetzt erledigt werden muss ---
@@ -146,9 +176,9 @@ function computeDashboard({ month, now = new Date(), courses = [], enrollments =
   }
   if (openEnr.length > 0) todos.push({ level: openPaymentsPct > t.openPaymentsPct ? 'bad' : 'warn', tab: 'kurse', text: `${openEnr.length} offene Zahlungen über ${eur(openOwed)} nachhalten.` });
   for (const p of byStaff.filter((x) => x.active && x.minijobPct >= 85)) {
-    todos.push({ level: p.minijobPct >= 100 ? 'bad' : 'warn', tab: 'personal', text: `${p.ref} hat ${p.minijobPct} % der Minijob-Grenze erreicht (${eur(p.earnedCents)} von ${eur(cfg.minijobLimitCents)}). Einsätze diesen Monat planen.` });
+    todos.push({ level: p.minijobPct >= 100 ? 'bad' : 'warn', tab: 'personal', text: `${p.ref} hat im ${mjMonth.split('-').reverse().join('/')} ${p.minijobPct} % der Minijob-Grenze erreicht (${eur(p.minijobEarnedCents)} von ${eur(cfg.minijobLimitCents)}). Einsätze diesen Monat planen.` });
   }
-  if (fixed === 0) todos.push({ level: 'info', tab: 'ziele', text: 'Fixkosten (Miete usw.) hinterlegen, damit das Ergebnis stimmt.' });
+  if (fixedMonthly === 0) todos.push({ level: 'info', tab: 'ziele', text: 'Fixkosten (Miete usw.) hinterlegen, damit das Ergebnis stimmt.' });
 
   // --- Verbesserungen: Auffaelligkeiten mit konkretem Hinweis ---
   const insights = [];
@@ -213,8 +243,21 @@ function computeDashboard({ month, now = new Date(), courses = [], enrollments =
   const top = new Map();
   for (const b of bars) for (const i of b.items) { const r = top.get(i.productId) || { name: i.name, qty: 0, revenueCents: 0 }; r.qty += i.sold; r.revenueCents += i.revenueCents; top.set(i.productId, r); }
 
+  // Vergleich mit der Vorperiode (gleiche Laenge, bei Monaten: Vormonat)
+  let previous = null;
+  if (compare) {
+    const pr = previousRange(range);
+    const p = computeDashboard({ ...arguments[0], month: undefined, from: pr.from, to: pr.to, compare: false });
+    previous = { from: pr.from, to: pr.to, totals: p.totals, bar: { revenueCents: p.bar.revenueCents, ticketRevenueCents: p.bar.ticketRevenueCents, guests: p.bar.guests } };
+    for (const k of kpis) { const pk = p.kpis.find((x) => x.id === k.id); k.prev = pk ? pk.value : null; }
+  }
+
   return {
-    month,
+    month: range.from.slice(0, 7),
+    from: range.from,
+    to: range.to,
+    days: daysBetween(range.from, range.to),
+    previous,
     settings: cfg,
     kpis,
     todos,
@@ -227,4 +270,25 @@ function computeDashboard({ month, now = new Date(), courses = [], enrollments =
   };
 }
 
-module.exports = { computeDashboard, mergeSettings, berlinDate, shiftHours, shiftCost, DEFAULT_SETTINGS };
+/** Jahresuebersicht: Kennzahlen je Monat */
+function computeYear({ year, ...data }) {
+  const months = [];
+  for (let m = 1; m <= 12; m++) {
+    const d = computeDashboard({ ...data, month: `${year}-${String(m).padStart(2, '0')}`, compare: false });
+    // Monate ohne jede Aktivitaet (noch keine Daten / Zukunft) zaehlen keine Fixkosten
+    const empty = !d.bar.nights && !d.personnel.totalCents && !d.totals.incomeCents;
+    if (empty) { d.totals.costsCents -= d.totals.fixedCents; d.totals.profitCents += d.totals.fixedCents; d.totals.fixedCents = 0; }
+    months.push({ empty,
+      month: d.month, nights: d.bar.nights, guests: d.bar.guests,
+      ticketCents: d.bar.ticketRevenueCents, drinksCents: d.bar.revenueCents, courseCents: d.totals.incomeCents - d.bar.revenueCents - d.bar.ticketRevenueCents,
+      incomeCents: d.totals.incomeCents, personnelCents: d.personnel.totalCents, fixedCents: d.totals.fixedCents, costsCents: d.totals.costsCents, profitCents: d.totals.profitCents,
+      cashDiffCents: d.bar.cashDiffCents, missingUnits: d.bar.missingUnits,
+      perGuestCents: d.kpis.find((k) => k.id === 'barPerGuest').value,
+    });
+  }
+  const keys = ['nights', 'guests', 'ticketCents', 'drinksCents', 'courseCents', 'incomeCents', 'personnelCents', 'fixedCents', 'costsCents', 'profitCents', 'missingUnits'];
+  const totals = Object.fromEntries(keys.map((k) => [k, sum(months, (x) => x[k] || 0)]));
+  return { year, months, totals };
+}
+
+module.exports = { computeDashboard, computeYear, rangeOf, previousRange, mergeSettings, berlinDate, shiftHours, shiftCost, DEFAULT_SETTINGS };

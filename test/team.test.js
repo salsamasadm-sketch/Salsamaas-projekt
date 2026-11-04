@@ -138,3 +138,34 @@ test('Abrechnung: Gratis zaehlt fuers Inventar, nicht als Umsatz; Nachfuellen er
   assert.equal(r.cashDiffCents, 0);
   assert.equal(r.freeUnits, 1);
 });
+
+test('Zeitraum, Vorperiode, Jahr und Kursgebuehr vor Ort', async () => {
+  const { computeDashboard, computeYear } = require('../src/dashboard');
+  const products = [{ id: 'k', name: 'Kurs 4 Wochen', priceCents: 9900, category: 'kursgebuehr' }, { id: 'e', name: 'Eintritt', priceCents: 800, category: 'eintritt' }, { id: 'b', name: 'Bier', priceCents: 400, category: 'bier' }];
+  const ses = (id, date) => ({ id, date, location: 'pasing', cashStartCents: 0, stockStart: { b: 10 }, stockEnd: { b: 9 }, cashEndCents: 0, closedAt: `${date}T23:00:00Z` });
+  const barsessions = [ses('s1', '2026-09-12'), ses('s2', '2026-10-10'), ses('s3', '2026-10-17')];
+  const sales = [
+    { sessionId: 's1', payment: 'karte', items: [{ productId: 'b', qty: 1, priceCents: 400 }] },
+    { sessionId: 's2', payment: 'karte', note: 'Anna', items: [{ productId: 'k', qty: 1, priceCents: 9900 }, { productId: 'e', qty: 1, priceCents: 800 }] },
+    { sessionId: 's3', payment: 'karte', items: [{ productId: 'b', qty: 1, priceCents: 400 }] },
+  ];
+  const s = computeSettlement(barsessions[1], [sales[1]], products);
+  assert.equal(s.courseFeeCents, 9900);
+  assert.equal(s.ticketCount, 1); // Kursgebuehr zaehlt nicht als Gast
+  assert.equal(s.drinksRevenueCents, 0);
+  assert.deepEqual(s.courseFees[0].refs, ['Anna']);
+  assert.equal(s.items.some((i) => i.productId === 'k'), false); // kein Inventar
+
+  const week = computeDashboard({ from: '2026-10-10', to: '2026-10-16', barsessions, sales, products, settings: { fixedCostsCents: { maxvorstadt: 31000, pasing: 0 } } });
+  assert.equal(week.bar.nights, 1);
+  assert.equal(week.kpis.find((k) => k.id === 'courseRevenue').value, 9900);
+  assert.equal(week.totals.fixedCents, 7000); // 7 Tage x 310 € / 31 Tage
+  assert.deepEqual([week.previous.from, week.previous.to], ['2026-10-03', '2026-10-09']);
+  const oct = computeDashboard({ month: '2026-10', barsessions, sales, products });
+  assert.equal(oct.previous.from, '2026-09-01');
+  assert.equal(oct.kpis.find((k) => k.id === 'barRevenue').prev, 400);
+  const y = computeYear({ year: 2026, barsessions, sales, products });
+  assert.equal(y.months[9].nights, 2);
+  assert.equal(y.months[9].courseCents, 9900);
+  assert.equal(y.totals.nights, 3);
+});

@@ -27,6 +27,9 @@ const pick = (a) => a[Math.floor(rnd() * a.length)];
 async function seed() { return seedInto(store); }
 async function seedInto(store) {
   const now = Date.now();
+  const fees = [['Kurs 4 Wochen', 9900, 'kursgebuehr'], ['Einzelstunde', 1500, 'kursgebuehr'], ['10er-Karte', 12000, 'kursgebuehr']]
+    .map(([name, priceCents, category], i) => ({ id: `k${i + 1}`, name, priceCents, category, active: true, sort: 5 + i, createdAt: new Date(now).toISOString() }));
+  for (const p of fees) await store.putDoc('products', p);
   const tickets = [['Eintritt Übungsabend', 800, 'eintritt'], ['Workshop + Party', 2500, 'workshop'], ['Workshop-Teilnehmer inkl.', 0, 'eintritt']]
     .map(([name, priceCents, category], i) => ({ id: `t${i + 1}`, name, priceCents, category, active: true, sort: i, createdAt: new Date(now).toISOString() }));
   for (const p of tickets) await store.putDoc('products', p);
@@ -77,6 +80,11 @@ async function seedInto(store) {
     for (let g = 0; g < guests; g++) {
       const t = withWorkshop && g < 22 ? (g < 18 ? tickets[1] : tickets[2]) : tickets[0];
       await store.putDoc('sales', { id: crypto.randomUUID(), sessionId: sid, at: new Date(open.getTime() + rnd() * 90 * 60_000).toISOString(), by: 'sofia', payment: rnd() < 0.6 ? 'bar' : 'karte', items: [{ productId: t.id, qty: 1, priceCents: t.priceCents }] });
+    }
+    // Kursgebuehren vor Ort (vor dem Uebungsabend)
+    for (let k = 0, n = Math.floor(rnd() * 4); k < n; k++) {
+      const f = pick(fees);
+      await store.putDoc('sales', { id: crypto.randomUUID(), sessionId: sid, at: new Date(open.getTime() - 20 * 60_000).toISOString(), by: 'lena', payment: rnd() < 0.5 ? 'bar' : 'karte', note: pick(['Anna K.', 'Tom', 'bs-2231', 'Mehmet', 'Julia S.']), items: [{ productId: f.id, qty: 1, priceCents: f.priceCents }] });
     }
     const sold = {};
     const nSales = Math.round(guests * (wd === 3 ? 0.9 : 1.05));

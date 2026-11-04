@@ -4,8 +4,9 @@
   const $ = (s) => document.querySelector(s);
   const LOC = { maxvorstadt: 'Maxvorstadt', pasing: 'Pasing' };
   const KIND = { bar: 'Bar / Theke', kurs: 'Unterricht', empfang: 'Empfang / Tür', sonstiges: 'Sonstiges' };
-  const TICKET = ['eintritt', 'workshop'];
-  const CAT = { eintritt: 'Eintritt', workshop: 'Workshops', softdrinks: 'Softdrinks', bier: 'Bier', wein: 'Wein & Sekt', cocktails: 'Cocktails', longdrinks: 'Longdrinks', shots: 'Shots', heiss: 'Heißgetränke', snacks: 'Snacks', sonstiges: 'Sonstiges' };
+  const TICKET = ['eintritt', 'workshop', 'kursgebuehr']; // ohne Inventar
+  const FEE = 'kursgebuehr';
+  const CAT = { eintritt: 'Eintritt', workshop: 'Workshops', kursgebuehr: 'Kursgebühren', softdrinks: 'Softdrinks', bier: 'Bier', wein: 'Wein & Sekt', cocktails: 'Cocktails', longdrinks: 'Longdrinks', shots: 'Shots', heiss: 'Heißgetränke', snacks: 'Snacks', sonstiges: 'Sonstiges' };
   const PAY = { bar: 'Bar', karte: 'Karte', gratis: 'Gratis/Personal' };
 
   // ---------- Hilfen ----------
@@ -69,7 +70,7 @@
   $('#logout').addEventListener('click', logout);
 
   // ---------- Navigation ----------
-  const TABS_OWNER = [['heute', 'Heute'], ['kasse', 'Kasse'], ['bar', 'Abrechnungen'], ['einkauf', 'Einkauf'], ['personal', 'Personal'], ['kurse', 'Kurse'], ['artikel', 'Getränke'], ['ziele', 'Ziele & Kosten']];
+  const TABS_OWNER = [['heute', 'Heute'], ['jahr', 'Jahr'], ['kasse', 'Kasse'], ['bar', 'Abrechnungen'], ['einkauf', 'Einkauf'], ['personal', 'Personal'], ['kurse', 'Kurse'], ['artikel', 'Getränke'], ['ziele', 'Ziele & Kosten']];
   const TABS_STAFF = [['zeit', 'Meine Zeit'], ['kasse', 'Kasse']];
   let current = null;
   let timerHandle;
@@ -84,11 +85,37 @@
     for (const [id, label] of auth.role === 'owner' ? TABS_OWNER : TABS_STAFF) {
       tabs.append(h('button', { type: 'button', class: id === name ? 'active' : '', onclick: () => route(id) }, label));
     }
-    const views = { einkauf: viewEinkauf, heute: viewHeute, kasse: viewKasse, bar: viewBar, personal: viewPersonal, kurse: viewKurse, artikel: viewArtikel, ziele: viewZiele, zeit: viewZeit, abrechnung: viewAbrechnung };
+    const views = { jahr: viewJahr, einkauf: viewEinkauf, heute: viewHeute, kasse: viewKasse, bar: viewBar, personal: viewPersonal, kurse: viewKurse, artikel: viewArtikel, ziele: viewZiele, zeit: viewZeit, abrechnung: viewAbrechnung };
     show(h('p', { class: 'muted' }, 'Lädt …'));
     Promise.resolve(views[name](arg)).then((el) => { if (current === name) show(el); }).catch((e) => show(h('div', { class: 'card' }, h('p', {}, e.message))));
   }
-  const show = (el) => { const v = $('#view'); v.replaceChildren(el); v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); };
+  const show = (el) => { const v = $('#view'); v.replaceChildren(el); sortableTables(v); v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); };
+  // Jede Tabelle mit Kopfzeile: Klick auf eine Spalte sortiert (Zahlen, Beträge, Daten)
+  function sortKey(td) {
+    const raw = td.dataset.sort ?? td.textContent.trim();
+    const dm = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(raw); if (dm) return `${dm[3]}-${dm[2]}-${dm[1]}`;
+    const n = raw.replace(/[€%▲▼+\s]|Pkt\./g, '').replace(/\./g, '').replace(',', '.').replace('−', '-');
+    return n !== '' && !Number.isNaN(Number(n)) ? Number(n) : raw.toLowerCase();
+  }
+  function sortableTables(root) {
+    for (const table of root.querySelectorAll('table:not(.nosort)')) {
+      const head = table.querySelector('tr'); if (!head || !head.querySelector('th')) continue;
+      [...head.children].forEach((th, col) => {
+        th.classList.add('sortable'); th.tabIndex = 0;
+        const sortBy = () => {
+          const dir = th.dataset.dir === 'asc' ? 'desc' : 'asc';
+          head.querySelectorAll('th').forEach((x) => { delete x.dataset.dir; });
+          th.dataset.dir = dir;
+          const rows = [...table.querySelectorAll('tr')].slice(1).filter((r) => !r.classList.contains('total-row'));
+          const total = table.querySelector('tr.total-row');
+          rows.sort((a, b) => { const x = sortKey(a.children[col] || a), y = sortKey(b.children[col] || b); return (x > y ? 1 : x < y ? -1 : 0) * (dir === 'asc' ? 1 : -1); });
+          const parent = rows[0]?.parentNode || table; rows.forEach((r) => parent.append(r)); if (total) parent.append(total);
+        };
+        th.addEventListener('click', sortBy);
+        th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sortBy(); } });
+      });
+    }
+  }
   const field = (label, input) => h('label', {}, label, input);
   const seg = (options, value, onChange) => h('div', { class: 'seg' }, Object.entries(options).map(([k, l]) => h('button', { type: 'button', class: k === value ? 'active' : '', onclick: () => onChange(k) }, l)));
   const select = (options, value, attrs = {}) => h('select', attrs, Object.entries(options).map(([k, l]) => h('option', { value: k, selected: k === value }, l)));
@@ -102,7 +129,7 @@
     const shell = h('div', { class: 'login' },
       h('div', { class: 'login-hero' },
         h('p', { class: 'count', 'aria-hidden': 'true' }, '1 · 2 · 3 · ', h('span', {}, '4'), ' · 5 · 6 · 7 · ', h('span', {}, '8')),
-        h('h1', { class: 'wordmark-xl' }, 'Salsamás'),
+        document.body.classList.contains('has-logo') ? h('img', { class: 'logo-xl', src: document.querySelector('.logo-img').src, alt: 'Salsamás' }) : h('h1', { class: 'wordmark-xl' }, 'Salsamás'),
         h('p', { class: 'login-sub' }, 'Kasse, Stunden und Überblick für Maxvorstadt und Pasing.')),
       wrap);
     const render = () => {
@@ -219,13 +246,14 @@
     let set = cur.settlement;
     const priceOf = new Map(products.map((p) => [p.id, p]));
     const prodButtons = new Map();
+    let feeRef = '';
     let lastTotal = 0;
 
     const renderHead = () => head.replaceChildren(
       h('div', { class: 'row spread' }, h('b', {}, `Kasse offen · ${LOC[ses.location]}`), h('span', { class: 'muted small' }, `seit ${time(ses.openedAt)} (${ses.openedBy})`)),
       h('div', { class: 'grid3 small' },
         h('div', {}, h('div', { class: 'muted' }, 'Umsatz heute'), h('b', {}, eur(set.revenueCents))),
-        h('div', {}, h('div', { class: 'muted' }, 'Eintritt / Getränke'), h('b', {}, `${eur(set.ticketRevenueCents)} / ${eur(set.drinksRevenueCents)}`)),
+        h('div', {}, h('div', { class: 'muted' }, set.courseFeeCents ? 'Eintritt / Kurs / Getränke' : 'Eintritt / Getränke'), h('b', {}, set.courseFeeCents ? `${eur(set.ticketRevenueCents)} / ${eur(set.courseFeeCents)} / ${eur(set.drinksRevenueCents)}` : `${eur(set.ticketRevenueCents)} / ${eur(set.drinksRevenueCents)}`)),
         h('div', {}, h('div', { class: 'muted' }, 'Gäste'), h('b', {}, set.ticketCount))),
     );
     const renderCart = () => {
@@ -235,13 +263,15 @@
       queueMicrotask(() => { const t = cartBox.querySelector('.total'); if (t && bump) { t.classList.remove('bump'); void t.offsetWidth; t.classList.add('bump'); } });
       const pay = (p) => run(async () => {
         if (!cart.size) return;
-        await api('POST', `/bar/${ses.id}/sales`, { payment: p, items: [...cart.entries()].map(([productId, qty]) => ({ productId, qty })) });
+        const note = [...cart.keys()].some((id) => priceOf.get(id).category === FEE) ? feeRef.trim() : '';
+        await api('POST', `/bar/${ses.id}/sales`, { payment: p, items: [...cart.entries()].map(([productId, qty]) => ({ productId, qty })), ...(note && { note }) });
         toast(p === 'gratis' ? 'Gratis gebucht' : `${eur(total)} ${PAY[p]} gebucht`);
-        cart.clear(); await refresh();
+        cart.clear(); feeRef = ''; await refresh();
       });
       cartBox.replaceChildren(
         h('div', { class: 'row spread receipt-head' }, h('span', { class: 'eyebrow' }, 'Bon'), h('span', { class: 'total' }, eur(total))),
         cart.size ? h('ul', { class: 'cartlist' }, [...cart.entries()].map(([id, q]) => h('li', {}, h('span', {}, `${q}× ${priceOf.get(id).name}`), h('span', { class: 'row' }, eur(q * priceOf.get(id).priceCents), h('button', { type: 'button', class: 'ghost', onclick: () => { q > 1 ? cart.set(id, q - 1) : cart.delete(id); renderCart(); } }, '−'))))) : h('p', { class: 'muted small' }, 'Getränk antippen, dann Zahlart wählen.'),
+        [...cart.keys()].some((id) => priceOf.get(id).category === FEE) && h('label', { class: 'fee-ref' }, 'Kursgebühr für wen? (Vorname oder Bsport-ID, optional)', h('input', { id: 'fee-ref', maxlength: 60, autocomplete: 'off', placeholder: 'z. B. Anna K. oder bs-1234', value: feeRef, oninput: (e) => { feeRef = e.target.value; } })),
         h('div', { class: 'grid3' },
           h('button', { class: 'btn', type: 'button', disabled: !cart.size, onclick: pay('bar') }, 'Bar'),
           h('button', { class: 'btn', type: 'button', disabled: !cart.size, onclick: pay('karte') }, 'Karte'),
@@ -253,7 +283,7 @@
       recentBox.replaceChildren(h('b', {}, 'Letzte Buchungen'),
         list.length ? h('ul', { class: 'list' }, list.slice(0, 8).map((s) => {
           const sum = s.payment === 'gratis' ? 0 : s.items.reduce((a, i) => a + i.qty * i.priceCents, 0);
-          return h('li', { class: s.voided ? 'info' : '' }, h('span', {}, h('span', { class: 'muted small' }, `${time(s.at)} · ${s.by} · ${PAY[s.payment]}`), h('br'), `${s.items.map((i) => `${i.qty}× ${priceOf.get(i.productId)?.name || '?'}`).join(', ')} – ${s.voided ? 'storniert' : eur(sum)}`),
+          return h('li', { class: s.voided ? 'info' : '' }, h('span', {}, h('span', { class: 'muted small' }, `${time(s.at)} · ${s.by} · ${PAY[s.payment]}${s.note ? ` · für ${s.note}` : ''}`), h('br'), `${s.items.map((i) => `${i.qty}× ${priceOf.get(i.productId)?.name || '?'}`).join(', ')} – ${s.voided ? 'storniert' : eur(sum)}`),
             !s.voided && h('button', { type: 'button', class: 'ghost', onclick: run(async () => { if (!await ask('Diese Buchung stornieren?')) return; await api('DELETE', `/bar/${ses.id}/sales/${s.id}`); toast('Storniert'); await refresh(); }) }, 'Storno'));
         })) : h('p', { class: 'muted small' }, 'Noch nichts verkauft.'));
     };
@@ -315,9 +345,13 @@
       h('div', { class: 'kpis' },
         kpiTile('Umsatz gesamt', eur(s.revenueCents), `bar ${eur(s.cashSalesCents)} · Karte ${eur(s.cardSalesCents)}`, 'none'),
         kpiTile('Eintritt & Workshops', eur(s.ticketRevenueCents), `${s.guests ?? 0} Gäste`, 'none'),
+        s.courseFeeCents > 0 && kpiTile('Kursgebühren vor Ort', eur(s.courseFeeCents), `${s.courseFees.reduce((a, f) => a + f.qty, 0)} Zahlungen`, 'none'),
         kpiTile('Getränke', eur(s.drinksRevenueCents), `${s.salesCount} Buchungen${s.voidedCount ? `, ${s.voidedCount} Storno` : ''}`, 'none'),
         kpiTile('Kassendifferenz', signedEur(s.cashDiffCents), `Soll ${eur(s.cashExpectedCents)}, gezählt ${eur(s.cashCountedCents)}`, cashLevel),
         kpiTile('Inventar', s.status !== 'closed' ? '–' : s.missingUnits === 0 ? 'passt' : `${s.missingUnits} fehlen`, s.missingUnits ? `≈ ${eur(s.missingValueCents)} Umsatz` : `${s.freeUnits || 0} gratis gebucht`, invLevel)),
+      s.courseFees?.length > 0 && h('div', { class: 'card table-wrap' }, h('b', {}, 'Kursgebühren vor Ort'), h('table', {},
+        h('tr', {}, h('th', {}, 'Art'), h('th', { class: 'num' }, 'Anzahl'), h('th', { class: 'num' }, 'Betrag'), h('th', {}, 'Für')),
+        s.courseFees.map((f) => h('tr', {}, h('td', {}, f.name), h('td', { class: 'num' }, f.qty), h('td', { class: 'num' }, eur(f.revenueCents)), h('td', { class: 'small' }, f.refs.join(', ') || '–'))))),
       s.tickets.length > 0 && h('div', { class: 'card table-wrap' }, h('b', {}, 'Gäste nach Ticket'), h('table', {},
         h('tr', {}, h('th', {}, 'Ticket'), h('th', { class: 'num' }, 'Personen'), h('th', { class: 'num' }, 'Umsatz')),
         s.tickets.map((t) => h('tr', {}, h('td', {}, t.name), h('td', { class: 'num' }, t.qty), h('td', { class: 'num' }, eur(t.revenueCents)))))),
@@ -336,32 +370,74 @@
 
   // ---------- Chef: Heute ----------
   const STATUS = { ok: 'im Ziel', warn: 'knapp', bad: 'daneben' };
-  function kpiTile(label, value, sub, status) {
+  function kpiTile(label, value, sub, status, deltaEl) {
     return h('div', { class: `kpi ${status}` },
       h('div', { class: 'kpi-head' }, h('span', { class: 'label' }, label), STATUS[status] && h('span', { class: `chip ${status}` }, STATUS[status])),
-      h('div', { class: 'value' }, value), sub && h('div', { class: 'sub' }, sub));
+      h('div', { class: 'value' }, value), deltaEl, sub && h('div', { class: 'sub' }, sub));
+  }
+  // Veraenderung zur Vorperiode; Farbe danach, ob mehr hier gut oder schlecht ist
+  const HIGHER_IS_BETTER = { profit: true, ticketRevenue: true, barRevenue: true, barPerGuest: true, utilizationPct: true, courseRevenue: true, missing: false, barPersonnelPct: false, personnelCost: false, openPaymentsPct: false };
+  function delta(k, prevLabel, inline) {
+    if (k.prev == null || k.value == null || !(k.id in HIGHER_IS_BETTER)) return null;
+    const diff = k.value - k.prev;
+    if (Math.abs(diff) < 1e-9) return h('span', { class: 'delta flat' }, `= ${prevLabel}`);
+    const pct = k.unit === 'pct' ? `${diff > 0 ? '+' : ''}${Math.round(diff)} Pkt.` : k.prev !== 0 ? `${diff > 0 ? '+' : ''}${Math.round((diff / Math.abs(k.prev)) * 100)} %` : k.unit === 'eur' ? signedEur(Math.round(diff)) : `${diff > 0 ? '+' : ''}${diff}`;
+    const good = (diff > 0) === HIGHER_IS_BETTER[k.id];
+    return h('span', { class: `delta ${good ? 'up' : 'down'}${inline ? ' inline' : ''}`, title: `${prevLabel}: ${fmtKpi({ ...k, value: k.prev })}` }, `${diff > 0 ? '▲' : '▼'} ${pct} ggü. ${prevLabel}`);
   }
   const fmtKpi = (k) => (k.value == null ? '–' : k.unit === 'eur' ? eur(Math.round(k.value)) : k.unit === 'pct' ? `${Math.round(k.value)} %` : String(k.value));
   const fmtTarget = (k) => (k.target == null ? null : `Ziel ${k.unit === 'eur' ? eur(k.target) : `${k.target} %`}`);
-  let month = window.COCKPIT_DEFAULT_MONTH || thisMonth();
-  const monthPicker = (onChange) => h('input', { type: 'month', value: month, class: 'monthpick', onchange: (e) => { month = e.target.value || thisMonth(); onChange(); } });
+  // ---------- Zeitraum: Monat, Jahr oder von–bis ----------
+  const todayStr = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  const addDays = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const shiftMonth = (m, n) => { const [y, mm] = m.split('-').map(Number); const t = new Date(Date.UTC(y, mm - 1 + n, 1)); return t.toISOString().slice(0, 7); };
+  const startMonth = window.COCKPIT_DEFAULT_MONTH || thisMonth();
+  const period = (() => { try { const p = JSON.parse(store.get('cockpit.period')); if (p && p.mode) return p; } catch { /* */ } return { mode: 'monat', month: startMonth, year: Number(startMonth.slice(0, 4)), from: addDays(todayStr(), -6), to: todayStr() }; })();
+  const savePeriod = () => store.set('cockpit.period', JSON.stringify(period));
+  const pq = () => (period.mode === 'monat' ? `month=${period.month}` : period.mode === 'jahr' ? `from=${period.year}-01-01&to=${period.year}-12-31` : `from=${period.from}&to=${period.to}`);
+  const monthLabel = (m) => new Date(`${m}-15T12:00:00`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  const periodLabel = () => (period.mode === 'monat' ? monthLabel(period.month) : period.mode === 'jahr' ? `Jahr ${period.year}` : `${dmy(period.from)} – ${dmy(period.to)}`);
+  const month = { toString: () => (period.mode === 'monat' ? period.month : period.mode === 'jahr' ? `${period.year}` : `${period.from}_${period.to}`) };
+  function periodPicker(onChange, opts = {}) {
+    const go = () => { savePeriod(); onChange(); };
+    const box = h('div', { class: `period${opts.dark ? ' on-night' : ''}` });
+    const step = (n) => () => { if (period.mode === 'monat') period.month = shiftMonth(period.month, n); else if (period.mode === 'jahr') period.year += n; else { const len = Math.round((Date.parse(period.to) - Date.parse(period.from)) / 86_400_000) + 1; period.from = addDays(period.from, n * len); period.to = addDays(period.to, n * len); } go(); };
+    const modes = h('div', { class: 'period-modes', role: 'tablist' }, [['monat', 'Monat'], ['jahr', 'Jahr'], ['zeitraum', 'Von – bis']].map(([k, l]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(period.mode === k), class: period.mode === k ? 'active' : '', onclick: () => { period.mode = k; go(); } }, l)));
+    let inputs;
+    if (period.mode === 'monat') inputs = h('input', { type: 'month', id: 'p-month', value: period.month, onchange: (e) => { if (e.target.value) { period.month = e.target.value; go(); } } });
+    else if (period.mode === 'jahr') inputs = h('select', { id: 'p-year', onchange: (e) => { period.year = Number(e.target.value); go(); } }, Array.from({ length: 6 }, (_, i) => Number(todayStr().slice(0, 4)) - 4 + i).map((y) => h('option', { value: y, selected: y === period.year }, y)));
+    else {
+      const f = h('input', { type: 'date', id: 'p-from', value: period.from, max: period.to });
+      const t = h('input', { type: 'date', id: 'p-to', value: period.to, min: period.from });
+      const apply = () => { if (f.value && t.value && f.value <= t.value) { period.from = f.value; period.to = t.value; go(); } };
+      f.addEventListener('change', apply); t.addEventListener('change', apply);
+      const preset = (label, from, to) => h('button', { type: 'button', class: 'preset', onclick: () => { period.from = from; period.to = to; go(); } }, label);
+      const td = todayStr(); const wd = (new Date(`${td}T12:00:00Z`).getUTCDay() + 6) % 7;
+      inputs = h('div', { class: 'period-range' }, f, h('span', { class: 'muted' }, '–'), t,
+        h('div', { class: 'presets' }, preset('Diese Woche', addDays(td, -wd), td), preset('Letztes Wochenende', addDays(td, -wd - 3), addDays(td, -wd - 1)), preset('Letzte 7 Tage', addDays(td, -6), td), preset('Letzte 30 Tage', addDays(td, -29), td)));
+    }
+    box.append(modes, h('div', { class: 'period-row' }, h('button', { type: 'button', class: 'nav-step', 'aria-label': 'Zurück', onclick: step(-1) }, '‹'), inputs, h('button', { type: 'button', class: 'nav-step', 'aria-label': 'Weiter', onclick: step(1) }, '›')));
+    return box;
+  }
+  const monthPicker = (onChange) => periodPicker(onChange);
 
   async function viewHeute() {
-    const d = await api('GET', `/dashboard?month=${month}`);
+    const d = await api('GET', `/dashboard?${pq()}`);
     const go = { einkauf: 'einkauf', bar: 'bar', personal: 'personal', kurse: 'kurse', ziele: 'ziele', kasse: 'kasse' };
     const SEV = { bad: 'Dringend', warn: 'Bald', info: 'Hinweis', ok: 'Gut' };
     const items = (list) => (list.length ? h('ul', { class: 'list' }, list.map((t) => h('li', { class: t.level }, h('span', { class: `sev ${t.level}` }, SEV[t.level] || ''), h('span', { class: 'list-text' }, t.text), t.tab && go[t.tab] && h('button', { type: 'button', class: 'link', onclick: () => route(go[t.tab]) }, 'öffnen')))) : h('p', { class: 'muted' }, 'Nichts offen.'));
     const profit = d.kpis.find((k) => k.id === 'profit');
     const urgent = d.todos.filter((t) => t.level === 'bad').length;
-    const monthName = new Date(`${d.month}-15T12:00:00`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+    const monthName = periodLabel();
+    const prevLabel = period.mode === 'monat' ? 'Vormonat' : period.mode === 'jahr' ? 'Vorjahr' : 'Vorzeitraum';
     return h('div', {},
       h('section', { class: 'hero' },
-        h('div', { class: 'row spread' }, h('span', { class: 'eyebrow' }, `Wo stehe ich? · ${monthName}`), monthPicker(() => route('heute'))),
+        h('div', { class: 'hero-top' }, h('span', { class: 'eyebrow' }, `Wo stehe ich? · ${monthName}`), periodPicker(() => route('heute'), { dark: true })),
         h('div', { class: 'hero-grid' },
-          h('p', { class: 'hero-figure' }, countUp(h('span', { class: profit.value < 0 ? 'neg' : '' }, eur(Math.round(profit.value))), profit.value), h('small', {}, 'Ergebnis im Monat')),
+          h('p', { class: 'hero-figure' }, countUp(h('span', { class: `fig${profit.value < 0 ? ' neg' : ''}` }, eur(Math.round(profit.value))), profit.value), h('small', {}, period.mode === 'monat' ? 'Ergebnis im Monat' : 'Ergebnis im Zeitraum', delta(profit, prevLabel, true))),
           sparkline(d.bar.daily)),
         h('p', { class: 'hero-line' }, urgent ? `${urgent} ${urgent === 1 ? 'Sache braucht' : 'Sachen brauchen'} dich jetzt, ${d.todos.length - urgent} weitere stehen an.` : d.todos.length ? `Nichts Dringendes. ${d.todos.length} Punkte stehen an.` : 'Alles im grünen Bereich.')),
-      h('div', { class: 'kpis' }, d.kpis.filter((k) => k.id !== 'profit').map((k) => kpiTile(k.label, fmtKpi(k), [fmtTarget(k), k.hint].filter(Boolean).join(' · '), k.status))),
+      h('div', { class: 'kpis' }, d.kpis.filter((k) => k.id !== 'profit').map((k) => kpiTile(k.label, fmtKpi(k), [fmtTarget(k), k.hint].filter(Boolean).join(' · '), k.status, delta(k, prevLabel)))),
       h('h2', {}, 'Was jetzt zu tun ist'), h('div', { class: 'card' }, items(d.todos)),
       h('h2', {}, 'Was verbessert werden sollte'), h('div', { class: 'card' }, items(d.insights)),
       h('h2', {}, 'Umsatz pro Abend'), h('div', { class: 'card' }, barChart(d.bar.daily), h('p', { class: 'small muted legend' }, h('span', { class: 'sw drinks' }), 'Getränke  ', h('span', { class: 'sw tickets' }), 'Eintritt & Workshops')),
@@ -414,9 +490,92 @@
     return s;
   }
 
+  // ---------- Chef: Jahresuebersicht & Monatsvergleich ----------
+  let cmp = null;
+  async function viewJahr() {
+    const year = period.year || Number(todayStr().slice(0, 4));
+    const y = await api('GET', `/year?year=${year}`);
+    const MN = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+    const active = y.months.filter((m) => m.nights || m.incomeCents);
+    if (!cmp || !cmp.a.startsWith(String(year))) { const l = active.slice(-2); cmp = { a: (l[0] || y.months[0]).month, b: (l[1] || l[0] || y.months[1]).month }; }
+    const yearSel = h('div', { class: 'period-row' },
+      h('button', { type: 'button', class: 'nav-step', 'aria-label': 'Vorjahr', onclick: () => { period.year = year - 1; savePeriod(); route('jahr'); } }, '‹'),
+      h('b', { class: 'year-label' }, String(year)),
+      h('button', { type: 'button', class: 'nav-step', 'aria-label': 'Folgejahr', onclick: () => { period.year = year + 1; savePeriod(); route('jahr'); } }, '›'));
+    const openMonth = (m) => () => { period.mode = 'monat'; period.month = m; savePeriod(); route('heute'); };
+    const best = [...active].sort((a, b) => b.profitCents - a.profitCents)[0];
+
+    // Diagramm: Einnahmen gestapelt (Kurse, Eintritt, Getraenke) und Kosten als Linie
+    const W = 640, H = 230, pl = 44, pb = 24, pt = 12;
+    const max = Math.max(1, ...y.months.map((m) => Math.max(m.incomeCents, m.costsCents)));
+    const colW = (W - pl - 8) / 12, bw = colW - 12;
+    const sx = (i) => pl + i * colW + 6;
+    const sy = (v) => H - pb - ((H - pb - pt) * v) / max;
+    const chart = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart yearchart', role: 'img', 'aria-label': 'Einnahmen und Kosten pro Monat' });
+    for (let g = 0; g <= 4; g++) {
+      const v = (max * g) / 4, yy = sy(v);
+      chart.append(svg('line', { x1: pl, x2: W - 8, y1: yy, y2: yy, class: 'grid' }));
+      const t = svg('text', { x: pl - 6, y: yy + 3, 'text-anchor': 'end', class: 'axis' }); t.textContent = `${Math.round(v / 100000)}k`; chart.append(t);
+    }
+    y.months.forEach((m, i) => {
+      const g = svg('g', { class: 'mbar' });
+      let base = 0;
+      for (const [val, cls] of [[m.courseCents, 'seg-course'], [m.ticketCents, 'seg-ticket'], [m.drinksCents, 'seg-drinks']]) {
+        if (val > 0) g.append(svg('rect', { x: sx(i), y: sy(base + val), width: bw, height: sy(base) - sy(base + val), class: cls }));
+        base += val;
+      }
+      const hit = svg('rect', { x: sx(i) - 6, y: pt, width: colW, height: H - pb - pt, class: 'hit' });
+      const ttl = svg('title', {}); ttl.textContent = `${MN[i]}: Einnahmen ${eur(m.incomeCents)}, Kosten ${eur(m.costsCents)}, Ergebnis ${eur(m.profitCents)}`; hit.append(ttl);
+      hit.addEventListener('click', openMonth(m.month));
+      g.append(hit); chart.append(g);
+      const t = svg('text', { x: sx(i) + bw / 2, y: H - 8, 'text-anchor': 'middle', class: m.empty ? 'axis empty' : 'axis' }); t.textContent = MN[i]; chart.append(t);
+    });
+    chart.append(svg('path', { d: y.months.map((m, i) => `${i ? 'L' : 'M'}${(sx(i) + bw / 2).toFixed(1)},${sy(m.costsCents).toFixed(1)}`).join(' '), class: 'cost-line', pathLength: 1 }));
+    y.months.forEach((m, i) => chart.append(svg('circle', { cx: sx(i) + bw / 2, cy: sy(m.costsCents), r: 3, class: 'cost-dot' })));
+
+    // Monatsvergleich A gegen B
+    const mA = y.months.find((m) => m.month === cmp.a) || y.months[0];
+    const mB = y.months.find((m) => m.month === cmp.b) || y.months[1];
+    const ROWS = [['Kassenabende', 'nights', 'n', true], ['Gäste', 'guests', 'n', true], ['Eintritt & Workshops', 'ticketCents', 'eur', true], ['Getränke', 'drinksCents', 'eur', true], ['Kurseinnahmen', 'courseCents', 'eur', true], ['Einnahmen gesamt', 'incomeCents', 'eur', true], ['Personalkosten', 'personnelCents', 'eur', false], ['Fixkosten', 'fixedCents', 'eur', false], ['Ergebnis', 'profitCents', 'eur', true], ['Getränke pro Gast', 'perGuestCents', 'eur', true], ['Fehlmenge Inventar', 'missingUnits', 'n', false]];
+    const fmt = (v, u) => (v == null ? '–' : u === 'eur' ? eur(Math.round(v)) : String(v));
+    const monthSel = (id, key) => h('select', { id, onchange: (e) => { cmp[key] = e.target.value; route('jahr'); } }, y.months.map((m, i) => h('option', { value: m.month, selected: m.month === cmp[key] }, `${MN[i]} ${year}`)));
+    const compare = h('div', { class: 'card' },
+      h('div', { class: 'cmp-pick' }, field('Monat A', monthSel('cmp-a', 'a')), h('span', { class: 'vs' }, 'vs.'), field('Monat B', monthSel('cmp-b', 'b'))),
+      h('div', { class: 'table-wrap' }, h('table', { class: 'nosort' },
+        h('tr', {}, h('th', {}, 'Kennzahl'), h('th', { class: 'num' }, MN[Number(cmp.a.slice(5)) - 1]), h('th', { class: 'num' }, MN[Number(cmp.b.slice(5)) - 1]), h('th', { class: 'num' }, 'Veränderung')),
+        ROWS.map(([label, key, u, hib]) => {
+          const a = mA[key], b = mB[key];
+          let dcell = h('td', { class: 'num muted' }, '–');
+          if (a != null && b != null && a !== b) {
+            const diff = b - a, good = (diff > 0) === hib;
+            dcell = h('td', { class: `num ${good ? 'oktxt' : 'badtxt'}` }, `${diff > 0 ? '▲' : '▼'} ${a ? `${diff > 0 ? '+' : ''}${Math.round((diff / Math.abs(a)) * 100)} %` : fmt(diff, u)}`);
+          }
+          return h('tr', { class: key === 'profitCents' ? 'strong' : '' }, h('td', {}, label), h('td', { class: 'num' }, fmt(a, u)), h('td', { class: 'num' }, fmt(b, u)), dcell);
+        }))));
+
+    const cell = (v, extra = '') => h('td', { class: `num ${extra}` }, v);
+    return h('div', {},
+      h('div', { class: 'row spread' }, h('h1', {}, 'Jahresübersicht'), yearSel),
+      h('div', { class: 'kpis' },
+        kpiTile('Einnahmen', eur(y.totals.incomeCents), `${y.totals.nights} Kassenabende · ${y.totals.guests} Gäste`, 'none'),
+        kpiTile('Kosten', eur(y.totals.costsCents), `Personal ${eur(y.totals.personnelCents)} · Fix ${eur(y.totals.fixedCents)}`, 'none'),
+        kpiTile('Ergebnis', eur(y.totals.profitCents), `${active.length} Monate mit Daten`, y.totals.profitCents >= 0 ? 'ok' : 'bad'),
+        kpiTile('Bester Monat', best ? MN[Number(best.month.slice(5)) - 1] : '–', best ? `Ergebnis ${eur(best.profitCents)}` : '', 'none')),
+      h('h2', {}, 'Einnahmen und Kosten pro Monat'),
+      h('div', { class: 'card' }, h('div', { class: 'table-wrap' }, chart),
+        h('p', { class: 'small muted legend' }, h('span', { class: 'sw course' }), 'Kurse', h('span', { class: 'sw tickets' }), 'Eintritt & Workshops', h('span', { class: 'sw drinks' }), 'Getränke', h('span', { class: 'sw costline' }), 'Kosten'),
+        h('p', { class: 'small muted' }, 'Auf einen Monat tippen, um ihn auf „Heute" im Detail zu öffnen. Monate ohne Daten zählen keine Fixkosten.')),
+      h('h2', {}, 'Monate vergleichen'), compare,
+      h('h2', {}, 'Alle Monate · Spalte antippen zum Sortieren'),
+      h('div', { class: 'card table-wrap' }, h('table', {},
+        h('tr', {}, h('th', {}, 'Monat'), h('th', { class: 'num' }, 'Abende'), h('th', { class: 'num' }, 'Gäste'), h('th', { class: 'num' }, 'Eintritt'), h('th', { class: 'num' }, 'Getränke'), h('th', { class: 'num' }, 'Kurse'), h('th', { class: 'num' }, 'Personal'), h('th', { class: 'num' }, 'Fixkosten'), h('th', { class: 'num' }, 'Ergebnis')),
+        y.months.map((m, i) => h('tr', { class: 'clickable', onclick: openMonth(m.month) }, h('td', { 'data-sort': m.month }, `${MN[i]} ${year}`), cell(m.nights), cell(m.guests), cell(eur(m.ticketCents)), cell(eur(m.drinksCents)), cell(eur(m.courseCents)), cell(eur(m.personnelCents)), cell(eur(m.fixedCents)), cell(eur(m.profitCents), m.profitCents < 0 ? 'badtxt' : ''))),
+        h('tr', { class: 'total-row' }, h('td', {}, 'Summe'), cell(y.totals.nights), cell(y.totals.guests), cell(eur(y.totals.ticketCents)), cell(eur(y.totals.drinksCents)), cell(eur(y.totals.courseCents)), cell(eur(y.totals.personnelCents)), cell(eur(y.totals.fixedCents)), cell(eur(y.totals.profitCents))))));
+  }
+
   // ---------- Chef: Abrechnungen ----------
   async function viewBar() {
-    const list = await api('GET', `/bar/sessions?month=${month}`);
+    const list = await api('GET', `/bar/sessions?${pq()}`);
     return h('div', {},
       h('div', { class: 'row spread' }, h('h1', {}, 'Abrechnungen'), monthPicker(() => route('bar'))),
       list.length ? h('div', { class: 'card table-wrap' }, h('table', {},
@@ -427,14 +586,14 @@
   // ---------- Chef: Einkaufsliste & Export ----------
   async function download(kind) {
     if (window.COCKPIT_DEMO) { toast('In der Demo nicht verfügbar – in der echten App lädt hier die Excel-Datei.'); return; }
-    const res = await fetch(`/app/api/export/${kind}?month=${month}`, { headers: { Authorization: `Bearer ${auth.token}` } });
+    const res = await fetch(`/app/api/export/${kind}?${pq()}`, { headers: { Authorization: `Bearer ${auth.token}` } });
     if (!res.ok) throw new Error('Export fehlgeschlagen');
     const url = URL.createObjectURL(await res.blob());
     const a = h('a', { href: url, download: `salsamas-${kind}-${month}.csv` }); document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
   async function viewEinkauf() {
-    const d = await api('GET', `/dashboard?month=${month}`);
+    const d = await api('GET', `/dashboard?${pq()}`);
     const text = Object.keys(LOC).map((l) => { const x = d.shopping.filter((i) => i.location === l); return x.length ? `Einkauf ${LOC[l]}:\n${x.map((i) => `- ${i.need}× ${i.name}`).join('\n')}` : ''; }).filter(Boolean).join('\n\n');
     return h('div', {}, h('h1', {}, 'Einkaufsliste'),
       h('p', { class: 'muted small' }, 'Aus dem letzten gezählten Endbestand und dem Ø-Verbrauch der letzten 4 Abende (mit 50 % Puffer).'),
@@ -448,7 +607,7 @@
 
   // ---------- Chef: Personal ----------
   async function viewPersonal() {
-    const [staff, shifts, d] = await Promise.all([api('GET', '/staff'), api('GET', `/shifts?month=${month}`), api('GET', `/dashboard?month=${month}`)]);
+    const [staff, shifts, d] = await Promise.all([api('GET', '/staff'), api('GET', `/shifts?${pq()}`), api('GET', `/dashboard?${pq()}`)]);
     const by = new Map(d.personnel.byStaff.map((x) => [x.ref, x]));
     const limit = d.settings.minijobLimitCents;
     const ref = h('input', { required: true, placeholder: 'Kürzel, z. B. lena' });
@@ -487,7 +646,7 @@
 
   // ---------- Chef: Kurse ----------
   async function viewKurse() {
-    const d = await api('GET', `/dashboard?month=${month}`);
+    const d = await api('GET', `/dashboard?${pq()}`);
     const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
     const rows = d.courses.rows.filter((c) => c.published);
     return h('div', {}, h('h1', {}, 'Kurse'),
@@ -511,7 +670,7 @@
           h('td', { class: 'row' },
             h('button', { type: 'button', class: 'link', onclick: run(async () => { const v = await ask(`Neuer Preis für ${p.name} in €`, { value: fromCents(p.priceCents), inputmode: 'decimal' }); if (v == null) return; const c = toCents(v); if (c == null) throw new Error('Preis prüfen'); await api('PATCH', `/products/${p.id}`, { priceCents: c }); route('artikel'); }) }, 'Preis'),
             h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))))) : h('p', { class: 'muted' }, 'Noch keine Getränke.')),
-      h('p', { class: 'muted small' }, 'Eintritt und Workshops zählen jeden Gast, haben aber kein Inventar. Für Workshop-Teilnehmer, die zum Übungsabend bleiben, ein Ticket mit 0 € anlegen (z. B. „Workshop-Teilnehmer inkl."). Ausgeblendete Artikel erscheinen nicht mehr an der Kasse, alte Abrechnungen bleiben erhalten. Preisänderungen gelten ab dem nächsten Verkauf.'));
+      h('p', { class: 'muted small' }, 'Eintritt und Workshops zählen jeden Gast, haben aber kein Inventar. Kursgebühren (z. B. „Kurs 4 Wochen", „Einzelstunde") laufen ohne Inventar in die Kurseinnahmen. Für Workshop-Teilnehmer, die zum Übungsabend bleiben, ein Ticket mit 0 € anlegen (z. B. „Workshop-Teilnehmer inkl."). Ausgeblendete Artikel erscheinen nicht mehr an der Kasse, alte Abrechnungen bleiben erhalten. Preisänderungen gelten ab dem nächsten Verkauf.'));
   }
 
   // ---------- Chef: Ziele & Kosten ----------
@@ -536,6 +695,11 @@
     h('div', { class: 'card' }, h('h2', {}, 'Minijob'), field('Monatsgrenze €', f.mini), h('p', { class: 'muted small' }, 'Die App warnt ab 85 % der Grenze.')),
     h('button', { class: 'btn block', type: 'submit' }, 'Speichern'));
   }
+
+  // Echtes Logo verwenden, sobald logo.svg / logo.png vorhanden ist (sonst Schriftzug)
+  const logoImg = document.querySelector('.logo-img');
+  const useLogo = () => { if (logoImg && logoImg.naturalWidth) document.body.classList.add('has-logo'); };
+  if (logoImg) { if (logoImg.complete) useLogo(); else logoImg.addEventListener('load', () => { useLogo(); if (current === 'login') route('login'); }); }
 
   route(auth ? (auth.role === 'owner' ? 'heute' : 'zeit') : 'login');
 })();

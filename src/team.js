@@ -5,7 +5,7 @@ const { z } = require('zod');
 const { rateLimit } = require('express-rate-limit');
 const { hashPin, verifyPin } = require('./session');
 const { sha256 } = require('./auth');
-const { computeDashboard, mergeSettings, berlinDate } = require('./dashboard');
+const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = require('./dashboard');
 const { computeSettlement } = require('./bar');
 const S = require('./schemas');
 
@@ -32,14 +32,14 @@ const shiftManual = z.object({ staffRef: ref, kind: KIND, location: LOC, start: 
   .refine((s) => new Date(s.end) > new Date(s.start) && new Date(s.end) - new Date(s.start) <= 16 * 3_600_000, 'Ende muss nach Start liegen (max. 16 Std.)');
 const ownShift = z.object({ kind: KIND, location: LOC, start: iso, end: iso }).strict()
   .refine((s) => new Date(s.end) > new Date(s.start) && new Date(s.end) - new Date(s.start) <= 16 * 3_600_000, 'Ende muss nach Start liegen (max. 16 Std.)');
-const CATEGORIES = ['eintritt', 'workshop', 'softdrinks', 'bier', 'wein', 'cocktails', 'longdrinks', 'shots', 'heiss', 'snacks', 'sonstiges'];
+const CATEGORIES = ['eintritt', 'workshop', 'kursgebuehr', 'softdrinks', 'bier', 'wein', 'cocktails', 'longdrinks', 'shots', 'heiss', 'snacks', 'sonstiges'];
 const pname = z.string().trim().min(1).max(40).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen');
 const productCreate = z.object({ name: pname, priceCents: cents(100_000), category: z.enum(CATEGORIES), active: z.boolean().default(true), sort: z.number().int().min(0).max(999).default(100) }).strict();
 const productPatch = z.object({ name: pname.optional(), priceCents: cents(100_000).optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
 const stock = z.record(S.id, z.number().int().min(0).max(10_000)).refine((o) => Object.keys(o).length <= 300, 'zu viele Artikel');
 const sessionOpen = z.object({ location: LOC, cashStartCents: cents(10_000_000), stockStart: stock }).strict();
-const saleSchema = z.object({ payment: z.enum(['bar', 'karte', 'gratis']), items: z.array(z.object({ productId: S.id, qty: z.number().int().min(1).max(50) }).strict()).min(1).max(30) }).strict();
+const saleSchema = z.object({ note: z.string().trim().min(1).max(60).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen').optional(), payment: z.enum(['bar', 'karte', 'gratis']), items: z.array(z.object({ productId: S.id, qty: z.number().int().min(1).max(50) }).strict()).min(1).max(30) }).strict();
 const sessionClose = z.object({ cashEndCents: cents(10_000_000), cashOutCents: cents(10_000_000).default(0), stockEnd: stock, restock: stock.default({}), guests: z.number().int().min(0).max(3000).optional(), note: note.optional() }).strict();
 const staffCreate = z.object({ ref, pin, hourlyRateCents: cents(20_000), active: z.boolean().default(true) }).strict();
 const staffPatch = z.object({ pin: pin.optional(), hourlyRateCents: cents(20_000).optional(), active: z.boolean().optional() }).strict()
@@ -50,6 +50,15 @@ const settingsSchema = z.object({
   minijobLimitCents: cents(1_000_000),
 }).strict();
 const monthQ = (q) => (/^\d{4}-\d{2}$/.test(q || '') ? q : null);
+const dayQ = (q) => (/^\d{4}-\d{2}-\d{2}$/.test(q || '') && !Number.isNaN(Date.parse(q)) ? q : null);
+/** Zeitraum aus ?from=&to= (max. 2 Jahre) oder ?month=; sonst null bzw. der aktuelle Monat */
+function rangeQ(q, fallbackCurrent) {
+  const from = dayQ(q.from), to = dayQ(q.to);
+  if (from && to && from <= to && Date.parse(to) - Date.parse(from) <= 731 * 86_400_000) return { from, to };
+  const month = monthQ(q.month) || (fallbackCurrent ? berlinDate(new Date()).slice(0, 7) : null);
+  return month ? rangeOf({ month }) : null;
+}
+const inR = (r, d) => !r || (d >= r.from && d <= r.to);
 
 function createTeamRouter({ store, keys, sessions, logger }) {
   const r = express.Router();
@@ -211,7 +220,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
       if (!p || p.active === false) return res.status(400).json({ error: 'unknown_product' });
       items.push({ productId: p.id, qty: it.qty, priceCents: p.priceCents });
     }
-    const sale = { id: crypto.randomUUID(), sessionId: ses.id, at: new Date().toISOString(), by: by(req), payment: d.payment, items };
+    const sale = { id: crypto.randomUUID(), sessionId: ses.id, at: new Date().toISOString(), by: by(req), payment: d.payment, items, ...(d.note && { note: d.note }) };
     await store.putDoc('sales', sale);
     res.status(201).json({ id: sale.id, totalCents: d.payment === 'gratis' ? 0 : items.reduce((a, i) => a + i.qty * i.priceCents, 0) });
   }));
@@ -254,37 +263,45 @@ function createTeamRouter({ store, keys, sessions, logger }) {
 
   // --- Nur Chef ---
   r.get('/dashboard', owner, wrap(async (req, res) => {
-    const month = monthQ(req.query.month) || berlinDate(new Date()).slice(0, 7);
+    const range = rangeQ(req.query, true);
     const [courses, enrollments, staff, shifts, barsessions, sales, products, settings] = await Promise.all([
       store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'),
     ]);
-    res.json(computeDashboard({ month, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
+    res.json(computeDashboard({ ...range, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
+  }));
+
+  r.get('/year', owner, wrap(async (req, res) => {
+    const year = /^\d{4}$/.test(req.query.year || '') ? Number(req.query.year) : Number(berlinDate(new Date()).slice(0, 4));
+    const [courses, enrollments, staff, shifts, barsessions, sales, products, settings] = await Promise.all([
+      store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'),
+    ]);
+    res.json(computeYear({ year, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
   }));
 
   r.get('/bar/sessions', owner, wrap(async (req, res) => {
-    const month = monthQ(req.query.month);
-    const list = (await store.listDocs('barsessions')).filter((b) => !month || b.date.startsWith(month));
+    const range = rangeQ(req.query, false);
+    const list = (await store.listDocs('barsessions')).filter((b) => inR(range, b.date));
     res.json((await Promise.all(list.map(settlement))).sort((a, b) => b.date.localeCompare(a.date)));
   }));
   // Monatsexport (CSV, Excel-tauglich mit ; und UTF-8-BOM) fuer Buchhaltung/Steuerberater
   r.get('/export/:kind', owner, wrap(async (req, res) => {
-    const month = monthQ(req.query.month);
-    if (!month || !['abende', 'schichten'].includes(req.params.kind)) return res.status(400).json({ error: 'invalid_request' });
+    const range = rangeQ(req.query, false);
+    if (!range || !['abende', 'schichten'].includes(req.params.kind)) return res.status(400).json({ error: 'invalid_request' });
     const q = (v) => { const t = String(v ?? ''); return /[;"\n]/.test(t) || /^[=+\-@]/.test(t) ? `"${t.replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"` : t; };
     const money = (c) => (c == null ? '' : (c / 100).toFixed(2).replace('.', ','));
     let rows;
     if (req.params.kind === 'abende') {
-      const list = (await Promise.all((await store.listDocs('barsessions')).filter((b) => b.date.startsWith(month)).map(settlement))).sort((a, b) => a.date.localeCompare(b.date));
+      const list = (await Promise.all((await store.listDocs('barsessions')).filter((b) => inR(range, b.date)).map(settlement))).sort((a, b) => a.date.localeCompare(b.date));
       rows = [['Datum', 'Standort', 'Gäste', 'Eintritt+Workshops', 'Getränke', 'Umsatz gesamt', 'davon bar', 'davon Karte', 'Kasse Anfang', 'Entnahmen', 'Kasse Soll', 'Kasse gezählt', 'Kassendifferenz', 'Fehlmenge Stück', 'Storno', 'geöffnet von', 'geschlossen von', 'Notiz'],
         ...list.map((s) => [s.date, s.location, s.guests ?? '', money(s.ticketRevenueCents), money(s.drinksRevenueCents), money(s.revenueCents), money(s.cashSalesCents), money(s.cardSalesCents), money(s.cashStartCents), money(s.cashOutCents), money(s.cashExpectedCents), money(s.cashCountedCents), money(s.cashDiffCents), s.missingUnits, s.voidedCount, s.openedBy, s.closedBy || 'offen', s.note || ''])];
     } else {
-      const list = (await store.listDocs('shifts')).filter((s) => berlinDate(s.start).startsWith(month)).sort((a, b) => a.staffRef.localeCompare(b.staffRef) || a.start.localeCompare(b.start));
+      const list = (await store.listDocs('shifts')).filter((s) => inR(range, berlinDate(s.start))).sort((a, b) => a.staffRef.localeCompare(b.staffRef) || a.start.localeCompare(b.start));
       const t = (iso) => new Date(iso).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' });
       rows = [['Kürzel', 'Tätigkeit', 'Standort', 'Beginn', 'Ende', 'Stunden', 'Stundenlohn', 'Kosten'],
         ...list.map((s) => { const hrs = s.end ? (new Date(s.end) - new Date(s.start)) / 3_600_000 : 0; return [s.staffRef, s.kind, s.location, t(s.start), s.end ? t(s.end) : 'läuft', hrs.toFixed(2).replace('.', ','), money(s.rateCents), money(Math.round(hrs * s.rateCents))]; })];
     }
     log(req, `export_${req.params.kind}`);
-    res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="salsamas-${req.params.kind}-${month}.csv"` });
+    res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="salsamas-${req.params.kind}-${range.from}_${range.to}.csv"` });
     res.send(`\ufeff${rows.map((r) => r.map(q).join(';')).join('\r\n')}\r\n`);
   }));
   r.delete('/bar/sessions/:id', owner, wrap(async (req, res) => {
@@ -331,8 +348,8 @@ function createTeamRouter({ store, keys, sessions, logger }) {
   }));
 
   r.get('/shifts', owner, wrap(async (req, res) => {
-    const month = monthQ(req.query.month);
-    const list = (await store.listDocs('shifts')).filter((s) => !month || berlinDate(s.start).startsWith(month));
+    const range = rangeQ(req.query, false);
+    const list = (await store.listDocs('shifts')).filter((s) => inR(range, berlinDate(s.start)));
     res.json(list.sort((a, b) => b.start.localeCompare(a.start)));
   }));
   // Nachtragen/Korrigieren durch den Chef (z. B. vergessenes Ausstempeln)
