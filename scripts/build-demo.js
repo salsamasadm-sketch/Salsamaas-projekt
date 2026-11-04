@@ -28,13 +28,16 @@ const safe = (js) => js.replace(/<\/script/gi, '<\\/script');
 
   const html = `<title>Salsamás Cockpit</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="theme-color" content="#c8102e">
+<meta name="theme-color" content="#14161b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500;600&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
 <style>
 ${read('src/public/style.css')}
 </style>
 <div class="demobar"><span>Demo mit Beispieldaten · Änderungen bleiben nur in diesem Browser</span><button type="button" id="demo-reset">Demo zurücksetzen</button></div>
 <header class="top">
-  <div class="brand"><span class="logo">S</span> Salsamás <b>Cockpit</b></div>
+  <div class="brand"><span class="wordmark">Salsamás</span><span class="tag">Cockpit</span></div>
   <button id="logout" class="ghost hidden" type="button">Abmelden</button>
 </header>
 <nav id="tabs" class="tabs hidden"></nav>

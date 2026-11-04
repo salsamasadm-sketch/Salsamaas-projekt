@@ -148,7 +148,7 @@ function createApp({ store, keys, sessions, allowedOrigins = [], logger = (l) =>
     app.use('/app/api', createTeamRouter({ store, keys, sessions, logger }));
     // Eigene CSP fuer die Oberflaeche: nur eigene Skripte/Styles, nichts von Fremdseiten.
     app.use('/app', (req, res, next) => {
-      res.set('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+      res.set('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
       next();
     }, express.static(path.join(__dirname, 'public'), { index: 'index.html', maxAge: '5m' }));
     app.get('/', (req, res) => res.redirect('/app/'));

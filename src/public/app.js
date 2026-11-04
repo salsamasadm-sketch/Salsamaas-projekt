@@ -88,7 +88,7 @@
     show(h('p', { class: 'muted' }, 'Lädt …'));
     Promise.resolve(views[name](arg)).then((el) => { if (current === name) show(el); }).catch((e) => show(h('div', { class: 'card' }, h('p', {}, e.message))));
   }
-  const show = (el) => $('#view').replaceChildren(el);
+  const show = (el) => { const v = $('#view'); v.replaceChildren(el); v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); };
   const field = (label, input) => h('label', {}, label, input);
   const seg = (options, value, onChange) => h('div', { class: 'seg' }, Object.entries(options).map(([k, l]) => h('button', { type: 'button', class: k === value ? 'active' : '', onclick: () => onChange(k) }, l)));
   const select = (options, value, attrs = {}) => h('select', attrs, Object.entries(options).map(([k, l]) => h('option', { value: k, selected: k === value }, l)));
@@ -98,13 +98,19 @@
   // ---------- Login ----------
   function viewLogin() {
     let mode = 'team';
-    const wrap = h('div', { class: 'card' });
+    const wrap = h('div', { class: 'login-card' });
+    const shell = h('div', { class: 'login' },
+      h('div', { class: 'login-hero' },
+        h('p', { class: 'count', 'aria-hidden': 'true' }, '1 · 2 · 3 · ', h('span', {}, '4'), ' · 5 · 6 · 7 · ', h('span', {}, '8')),
+        h('h1', { class: 'wordmark-xl' }, 'Salsamás'),
+        h('p', { class: 'login-sub' }, 'Kasse, Stunden und Überblick für Maxvorstadt und Pasing.')),
+      wrap);
     const render = () => {
       const ref = h('input', { autocomplete: 'username', autocapitalize: 'none', required: true, placeholder: 'z. B. lena' });
       const pin = h('input', { type: 'password', inputmode: 'numeric', autocomplete: 'current-password', required: true, minlength: 6, maxlength: 8, placeholder: '6–8 Ziffern' });
       const key = h('input', { type: 'password', autocomplete: 'current-password', required: true, placeholder: 'Chef-Schlüssel' });
       wrap.replaceChildren(
-        h('h1', {}, 'Anmelden'),
+        h('h2', { class: 'login-title' }, 'Anmelden'),
         seg({ team: 'Team', chef: 'Chef' }, mode, (m) => { mode = m; render(); }),
         h('form', { onsubmit: run(async () => {
           const r = await api('POST', '/login', mode === 'team' ? { ref: ref.value.trim(), pin: pin.value } : { apiKey: key.value.trim() });
@@ -122,7 +128,7 @@
       );
     };
     render();
-    return wrap;
+    return shell;
   }
 
   // ---------- Team: Meine Zeit ----------
@@ -208,10 +214,12 @@
     const cart = new Map();
     const root = h('div', {});
     const head = h('div', { class: 'card' });
-    const cartBox = h('div', { class: 'card cart' });
+    const cartBox = h('div', { class: 'receipt cart' });
     const recentBox = h('div', { class: 'card' });
     let set = cur.settlement;
     const priceOf = new Map(products.map((p) => [p.id, p]));
+    const prodButtons = new Map();
+    let lastTotal = 0;
 
     const renderHead = () => head.replaceChildren(
       h('div', { class: 'row spread' }, h('b', {}, `Kasse offen · ${LOC[ses.location]}`), h('span', { class: 'muted small' }, `seit ${time(ses.openedAt)} (${ses.openedBy})`)),
@@ -222,6 +230,9 @@
     );
     const renderCart = () => {
       const total = [...cart.entries()].reduce((a, [id, q]) => a + q * priceOf.get(id).priceCents, 0);
+      for (const [id, { btn, badge }] of prodButtons) { const q = cart.get(id) || 0; badge.textContent = q ? `${q}×` : ''; btn.classList.toggle('in-cart', q > 0); }
+      const bump = total !== lastTotal; lastTotal = total;
+      queueMicrotask(() => { const t = cartBox.querySelector('.total'); if (t && bump) { t.classList.remove('bump'); void t.offsetWidth; t.classList.add('bump'); } });
       const pay = (p) => run(async () => {
         if (!cart.size) return;
         await api('POST', `/bar/${ses.id}/sales`, { payment: p, items: [...cart.entries()].map(([productId, qty]) => ({ productId, qty })) });
@@ -229,7 +240,7 @@
         cart.clear(); await refresh();
       });
       cartBox.replaceChildren(
-        h('div', { class: 'row spread' }, h('b', {}, 'Bon'), h('span', { class: 'total' }, eur(total))),
+        h('div', { class: 'row spread receipt-head' }, h('span', { class: 'eyebrow' }, 'Bon'), h('span', { class: 'total' }, eur(total))),
         cart.size ? h('ul', { class: 'cartlist' }, [...cart.entries()].map(([id, q]) => h('li', {}, h('span', {}, `${q}× ${priceOf.get(id).name}`), h('span', { class: 'row' }, eur(q * priceOf.get(id).priceCents), h('button', { type: 'button', class: 'ghost', onclick: () => { q > 1 ? cart.set(id, q - 1) : cart.delete(id); renderCart(); } }, '−'))))) : h('p', { class: 'muted small' }, 'Getränk antippen, dann Zahlart wählen.'),
         h('div', { class: 'grid3' },
           h('button', { class: 'btn', type: 'button', disabled: !cart.size, onclick: pay('bar') }, 'Bar'),
@@ -252,8 +263,13 @@
     const grid = h('div', {});
     const byCat = new Map();
     for (const p of products) { const l = byCat.get(p.category) || []; l.push(p); byCat.set(p.category, l); }
-    for (const [cat, list] of byCat) {
-      grid.append(h('div', { class: 'catlabel' }, CAT[cat] || cat), h('div', { class: 'pos' }, list.map((p) => h('button', { type: 'button', class: 'prod', onclick: () => { cart.set(p.id, (cart.get(p.id) || 0) + 1); renderCart(); } }, h('span', {}, p.name), h('small', {}, eur(p.priceCents))))));
+    for (const [cat, list] of [...byCat].sort((a, b) => Object.keys(CAT).indexOf(a[0]) - Object.keys(CAT).indexOf(b[0]))) {
+      grid.append(h('div', { class: 'catlabel' }, CAT[cat] || cat), h('div', { class: 'pos' }, list.map((p) => {
+        const badge = h('b', { class: 'qty', 'aria-hidden': 'true' });
+        const btn = h('button', { type: 'button', class: `prod${TICKET.includes(p.category) ? ' ticket' : ''}`, onclick: () => { cart.set(p.id, (cart.get(p.id) || 0) + 1); renderCart(); } }, h('span', {}, p.name), h('small', {}, eur(p.priceCents)), badge);
+        prodButtons.set(p.id, { btn, badge });
+        return btn;
+      })));
     }
     renderHead(); renderCart(); await renderRecent();
     root.append(head, cartBox, h('div', { class: 'card' }, grid), recentBox,
@@ -319,8 +335,11 @@
   }
 
   // ---------- Chef: Heute ----------
+  const STATUS = { ok: 'im Ziel', warn: 'knapp', bad: 'daneben' };
   function kpiTile(label, value, sub, status) {
-    return h('div', { class: `kpi ${status}` }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), sub && h('div', { class: 'sub' }, sub));
+    return h('div', { class: `kpi ${status}` },
+      h('div', { class: 'kpi-head' }, h('span', { class: 'label' }, label), STATUS[status] && h('span', { class: `chip ${status}` }, STATUS[status])),
+      h('div', { class: 'value' }, value), sub && h('div', { class: 'sub' }, sub));
   }
   const fmtKpi = (k) => (k.value == null ? '–' : k.unit === 'eur' ? eur(Math.round(k.value)) : k.unit === 'pct' ? `${Math.round(k.value)} %` : String(k.value));
   const fmtTarget = (k) => (k.target == null ? null : `Ziel ${k.unit === 'eur' ? eur(k.target) : `${k.target} %`}`);
@@ -330,10 +349,19 @@
   async function viewHeute() {
     const d = await api('GET', `/dashboard?month=${month}`);
     const go = { einkauf: 'einkauf', bar: 'bar', personal: 'personal', kurse: 'kurse', ziele: 'ziele', kasse: 'kasse' };
-    const items = (list) => (list.length ? h('ul', { class: 'list' }, list.map((t) => h('li', { class: t.level }, h('span', { class: `dot ${t.level}` }), h('span', {}, t.text), t.tab && go[t.tab] && h('button', { type: 'button', class: 'link', onclick: () => route(go[t.tab]) }, 'öffnen')))) : h('p', { class: 'muted' }, 'Alles erledigt 👍'));
+    const SEV = { bad: 'Dringend', warn: 'Bald', info: 'Hinweis', ok: 'Gut' };
+    const items = (list) => (list.length ? h('ul', { class: 'list' }, list.map((t) => h('li', { class: t.level }, h('span', { class: `sev ${t.level}` }, SEV[t.level] || ''), h('span', { class: 'list-text' }, t.text), t.tab && go[t.tab] && h('button', { type: 'button', class: 'link', onclick: () => route(go[t.tab]) }, 'öffnen')))) : h('p', { class: 'muted' }, 'Nichts offen.'));
+    const profit = d.kpis.find((k) => k.id === 'profit');
+    const urgent = d.todos.filter((t) => t.level === 'bad').length;
+    const monthName = new Date(`${d.month}-15T12:00:00`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
     return h('div', {},
-      h('div', { class: 'row spread' }, h('h1', {}, 'Wo stehe ich?'), monthPicker(() => route('heute'))),
-      h('div', { class: 'kpis' }, d.kpis.map((k) => kpiTile(k.label, fmtKpi(k), [fmtTarget(k), k.hint].filter(Boolean).join(' · '), k.status))),
+      h('section', { class: 'hero' },
+        h('div', { class: 'row spread' }, h('span', { class: 'eyebrow' }, `Wo stehe ich? · ${monthName}`), monthPicker(() => route('heute'))),
+        h('div', { class: 'hero-grid' },
+          h('p', { class: 'hero-figure' }, countUp(h('span', { class: profit.value < 0 ? 'neg' : '' }, eur(Math.round(profit.value))), profit.value), h('small', {}, 'Ergebnis im Monat')),
+          sparkline(d.bar.daily)),
+        h('p', { class: 'hero-line' }, urgent ? `${urgent} ${urgent === 1 ? 'Sache braucht' : 'Sachen brauchen'} dich jetzt, ${d.todos.length - urgent} weitere stehen an.` : d.todos.length ? `Nichts Dringendes. ${d.todos.length} Punkte stehen an.` : 'Alles im grünen Bereich.')),
+      h('div', { class: 'kpis' }, d.kpis.filter((k) => k.id !== 'profit').map((k) => kpiTile(k.label, fmtKpi(k), [fmtTarget(k), k.hint].filter(Boolean).join(' · '), k.status))),
       h('h2', {}, 'Was jetzt zu tun ist'), h('div', { class: 'card' }, items(d.todos)),
       h('h2', {}, 'Was verbessert werden sollte'), h('div', { class: 'card' }, items(d.insights)),
       h('h2', {}, 'Umsatz pro Abend'), h('div', { class: 'card' }, barChart(d.bar.daily), h('p', { class: 'small muted legend' }, h('span', { class: 'sw drinks' }), 'Getränke  ', h('span', { class: 'sw tickets' }), 'Eintritt & Workshops')),
@@ -349,6 +377,26 @@
       h('p', { class: 'muted small' }, 'Prototyp: Wareneinkauf ist noch nicht abgezogen. Kurseinnahmen zählen im Monat der Anmeldung.'));
   }
 
+  // Grosse Zahl zaehlt beim Oeffnen kurz hoch (ohne Bewegung, wenn reduziert gewuenscht)
+  function countUp(el, cents) {
+    if (!Number.isFinite(cents) || matchMedia('(prefers-reduced-motion: reduce)').matches) return el;
+    const t0 = performance.now(), dur = 700;
+    const step = (t) => { const k = Math.min(1, (t - t0) / dur); const e = 1 - (1 - k) ** 3; el.textContent = eur(Math.round((cents * e) / 100) * 100); if (k < 1) requestAnimationFrame(step); else el.textContent = eur(Math.round(cents)); };
+    requestAnimationFrame(step);
+    return el;
+  }
+  function sparkline(daily) {
+    if (daily.length < 2) return null;
+    const W = 260, H = 64, max = Math.max(...daily.map((x) => x.revenueCents), 1);
+    const pts = daily.map((x, i) => [(i / (daily.length - 1)) * (W - 8) + 4, H - 6 - ((H - 14) * x.revenueCents) / max]);
+    const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+    const s = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'spark', role: 'img', 'aria-label': 'Umsatz pro Abend im Verlauf' });
+    s.append(svg('path', { d: `${line} L${pts.at(-1)[0]},${H} L${pts[0][0]},${H} Z`, class: 'spark-area' }), svg('path', { d: line, class: 'spark-line', pathLength: 1 }));
+    const [ex, ey] = pts.at(-1); s.append(svg('circle', { cx: ex, cy: ey, r: 4, class: 'spark-dot' }));
+    const wrap = h('figure', { class: 'spark-wrap' }, s, h('figcaption', {}, `Umsatz pro Abend · ${daily.length} Abende`));
+    return wrap;
+  }
+
   function barChart(daily) {
     if (!daily.length) return h('p', { class: 'muted' }, 'Noch keine Kassen in diesem Monat.');
     const W = 600, H = 160, pad = 22, max = Math.max(...daily.map((x) => x.revenueCents), 1);
@@ -358,7 +406,7 @@
       const bh = ((H - pad - 14) * x.revenueCents) / max; const xx = pad + i * ((W - pad) / daily.length) + 2;
       const dh = ((H - pad - 14) * x.drinksCents) / max;
       const g = svg('g', {});
-      g.append(svg('rect', { x: xx, y: H - pad - bh, width: bw, height: bh - dh, class: 'bar tickets' }), svg('rect', { x: xx, y: H - pad - dh, width: bw, height: dh, class: 'bar' }));
+      g.append(svg('rect', { x: xx, y: H - pad - bh, width: bw, height: bh - dh, class: 'bar tickets' }), svg('rect', { x: xx, y: H - pad - dh, width: bw, height: dh, class: x.revenueCents === max ? 'bar peak' : 'bar' }));
       const title = svg('title', {}); title.textContent = `${dmy(x.date)}: ${eur(x.revenueCents)} (Getränke ${eur(x.drinksCents)}, Eintritt ${eur(x.ticketCents)}, ${x.guests} Gäste)`; g.append(title); s.append(g);
       const lbl = svg('text', { x: xx + bw / 2, y: H - 6, 'text-anchor': 'middle', class: 'axis' }); lbl.textContent = x.date.slice(8); s.append(lbl);
       const v = svg('text', { x: xx + bw / 2, y: H - pad - bh - 4, 'text-anchor': 'middle', class: 'axis' }); v.textContent = Math.round(x.revenueCents / 100); s.append(v);
