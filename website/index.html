@@ -718,6 +718,16 @@
     .hero h1{font-size:clamp(2rem,3.2vw,3rem);}
     .hero-loc{flex-wrap:nowrap;}
   }
+  /* Runde 3 */
+  .loc-card-tag{display:none;}
+  .quiz .ornament{display:none;}
+  .hero-badges{gap:6px 22px;}
+  .hero-badge{background:none;border:none;padding:0;font-weight:600;color:rgba(255,255,255,.85);display:inline-flex;align-items:center;gap:8px;}
+  .story-grid .story-year{background:var(--noche);display:flex;flex-direction:column;justify-content:flex-end;padding:36px;aspect-ratio:4/5;}
+  .story-year .yr{font-family:var(--font-display);color:var(--accent-on-dark);font-size:clamp(5rem,11vw,9rem);line-height:.85;letter-spacing:-.05em;font-variation-settings:"wght" 700,"wdth" 75,"opsz" 96;}
+  .story-year .yr-sub{color:rgba(255,255,255,.75);margin-top:18px;max-width:24ch;font-size:1rem;}
+  .milestone-row div:first-child{display:none;}
+  @media (max-width:860px){.story-grid .story-year{aspect-ratio:auto;min-height:260px;}}
 </style>
 </head>
 <body>
@@ -952,15 +962,7 @@
         <h2>Über 20 Jahre Tanzen in München.</h2>
       </div>
       <div class="story-grid">
-        <div class="story-visual">
-          <svg viewBox="0 0 300 400" preserveAspectRatio="xMidYMid slice">
-            <rect width="300" height="400" fill="#ffffff"/>
-            <path d="M0,400 L0,150 C100,100 220,220 300,140 L300,400 Z" style="fill:var(--accent)"/>
-            <g stroke="#141414" stroke-width="1.4" fill="none" opacity="0.8">
-              <path d="M30,260 C100,220 180,320 270,250"/>
-            </g>
-          </svg>
-        </div>
+        <div class="story-visual story-year" aria-hidden="true"><span class="yr">2006</span><span class="yr-sub">Gegründet im Oktober in Schwabing.</span></div>
         <div class="story-copy">
           <p>Salsamás wurde im Oktober 2006 von Pablo de Queiroz gegründet — mitten im Künstlerviertel Schwabing. Aus einer kleinen Tanzgruppe wurde über die Jahre eine der innovativsten Tanzschulen Münchens.</p>
           <p>Heute führen Pablo und Silvina Igova die Schule gemeinsam. Beide sind deutschlandweit gefragte Gäste auf Salsakongressen und Festivals — 2011 wurden sie Vizemeister der Deutschen Salsa-Meisterschaft in Ludwigsburg.</p>
