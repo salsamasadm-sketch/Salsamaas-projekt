@@ -89,3 +89,19 @@ API_KEYS=<Eintrag> npm start
 - Abgleich mit Bsport/Bank ist nicht eingebaut; Zahlungsstatus wird per API gesetzt.
 - Firestore-Anbindung ist nicht gegen eine echte Datenbank getestet (nur die Logik per Datei-Speicher).
 - Cockpit: keine TSE (siehe oben), kein Offline-Modus (Kasse braucht Internet), Wareneinkauf noch nicht im Ergebnis, Kurseinnahmen zählen im Monat der Anmeldung.
+
+## Betrieb (live seit 05.11.2026)
+
+- Google-Cloud-Projekt `salsamas`, Region `europe-west3` (Frankfurt)
+- Cloud Run `salsamas-cockpit` (Dienstkonto `cockpit-run`, nur Firestore + 2 Secrets), max. 3 Instanzen
+- Firestore (native, Frankfurt), Sicherheitsregeln `firestore.rules`: kein direkter Zugriff, nur über den App-Server
+- Secret Manager: `cockpit-api-keys` (Chef-Schlüssel als SHA-256), `cockpit-session-secret`
+- Tägliche Firestore-Sicherung (7 Tage), Budget-Alarm 10 €/Monat
+- Nicht in Suchmaschinen: `robots.txt` + `X-Robots-Tag: noindex`
+
+**Automatisch live stellen:** `.github/workflows/deploy.yml` testet jede Änderung und stellt jeden Push auf `main`
+live – ohne gespeicherte Schlüssel (Workload Identity Federation). Einmalige Einrichtung durch den Projekt-Inhaber:
+`scripts/setup-github-deploy.sh` in der Google Cloud Shell ausführen.
+
+**Alle Geräte abmelden:** neue Version von `cockpit-session-secret` anlegen und neu deployen.
+**Neuer Chef-Schlüssel:** `npm run gen-key -- chef write`, Eintrag als neue Version von `cockpit-api-keys`.
