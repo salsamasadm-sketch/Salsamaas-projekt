@@ -61,7 +61,7 @@ function createApp({ store, keys, sessions, allowedOrigins = [], logger = (l) =>
   };
 
   // Nicht in Suchmaschinen: jede Antwort mit noindex, dazu robots.txt die alles verbietet
-  app.use((req, res, next) => { res.set('X-Robots-Tag', 'noindex, nofollow, noarchive'); next(); });
+  app.use((req, res, next) => { res.set({ 'X-Robots-Tag': 'noindex, nofollow, noarchive', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' }); next(); });
   app.get('/robots.txt', (req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 

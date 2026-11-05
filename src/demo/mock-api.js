@@ -143,7 +143,7 @@
     const qf = query.get('from'), qt = query.get('to');
     const range = /^\d{4}-\d{2}-\d{2}$/.test(qf || '') && /^\d{4}-\d{2}-\d{2}$/.test(qt || '') && qf <= qt ? { from: qf, to: qt } : month ? rangeOf({ month }) : null;
     const inR = (d) => !range || (d >= range.from && d <= range.to);
-    const data = () => ({ purchases: list('purchases'), invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main });
+    const data = () => ({ purchases: list('purchases'), invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales'), products: list('products'), settings: db.settings.main });
     if (method === 'GET' && path === '/year') return json(200, computeYear({ year: Number(query.get('year')) || Number(today().slice(0, 4)), ...data() }));
     if (method === 'GET' && path === '/dashboard') {
       return json(200, computeDashboard({ ...(range || rangeOf({ month: today().slice(0, 7) })), purchases: list('purchases'), invoices: list('invoices'), courses: list('courses'), enrollments: enrollments(), staff: list('staff'), shifts: list('shifts'), barsessions: list('barsessions'), sales: list('sales').filter((x) => !x.voided), products: list('products'), settings: db.settings.main }));

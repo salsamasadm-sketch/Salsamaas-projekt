@@ -84,7 +84,8 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
 
   // --- Bar ---
   const salesBySession = new Map();
-  for (const x of sales) { const l = salesBySession.get(x.sessionId) || []; l.push(x); salesBySession.set(x.sessionId, l); }
+  const voidsBySession = new Map(); // stornierte Buchungen (Betrugsschutz)
+  for (const x of sales) { const m = x.voided ? voidsBySession : salesBySession; const l = m.get(x.sessionId) || []; l.push(x); m.set(x.sessionId, l); }
   const bars = barsessions.filter((b) => inMonth(b.date)).map((b) => computeSettlement(b, salesBySession.get(b.id) || [], products));
   // Bar-Umsatz = nur Getraenke/Snacks. Eintritt und Workshops laufen getrennt.
   const barRevenue = sum(bars, (b) => b.drinksRevenueCents);
@@ -187,6 +188,17 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
   } else for (const b of withMissing) {
     const top = b.items.filter((i) => i.diff < 0).map((i) => `${-i.diff}× ${i.name}`).slice(0, 3).join(', ');
     todos.push({ level: b.missingUnits > 3 ? 'bad' : 'warn', tab: 'bar', text: `Inventar ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}): es fehlen ${top}.` });
+  }
+  // Auffaellige Stornos oder Gratis-Buchungen pro Kasse (z. B. verkauft, Bargeld genommen, storniert)
+  const stLabel = (st) => (st === 'tuer' ? 'Tür' : st === 'kombi' ? 'Kombi-Kasse' : 'Theke');
+  const byPerson = (list) => { const m = new Map(); for (const x of list) m.set(x.by, (m.get(x.by) || 0) + 1); return [...m].map(([k, n]) => `${k} ${n}`).join(', '); };
+  for (const b of bars) {
+    const voids = voidsBySession.get(b.sessionId) || [];
+    const voidCents = sum(voids.filter((x) => x.payment !== 'gratis'), (x) => sum(x.items, (i) => i.qty * i.priceCents));
+    if (voids.length >= 3 || voidCents >= 2000) todos.push({ level: voids.length >= 5 || voidCents >= 5000 ? 'bad' : 'warn', tab: 'bar', text: `${stLabel(b.station)} ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}): ${voids.length} Stornos über ${eur(voidCents)} (${byPerson(voids.map((x) => ({ by: x.voidedBy || x.by })))}) – bitte prüfen.` });
+    const free = (salesBySession.get(b.sessionId) || []).filter((x) => x.payment === 'gratis');
+    const freeUnits = sum(free, (x) => sum(x.items, (i) => i.qty));
+    if (freeUnits >= 6) todos.push({ level: 'info', tab: 'bar', text: `${stLabel(b.station)} ${b.date.split('-').reverse().join('.')} (${LOC_LABEL[b.location]}): ${freeUnits} Gratis-Buchungen (${byPerson(free)}).` });
   }
   const barDays = new Set(barsessions.map((b) => `${b.date}_${b.location}`));
   const missing = new Set();

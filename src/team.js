@@ -20,13 +20,14 @@ const S = require('./schemas');
 const LOC = z.enum(S.LOCATIONS);
 const KIND = z.enum(['bar', 'kurs', 'empfang', 'kombi', 'sonstiges']);
 const ref = z.string().regex(/^[A-Za-z0-9_.-]{2,30}$/, 'Kürzel: 2–30 Zeichen, nur Buchstaben/Zahlen');
-const pin = z.string().regex(/^\d{6,8}$/, 'PIN: 6–8 Ziffern');
+const WEAK_PIN = (p) => /^(\d)\1+$/.test(p) || '0123456789'.includes(p) || '9876543210'.includes(p) || ['123123', '121212', '112233', '102030', '696969', '131313', '159753', '147258'].includes(p);
+const pin = z.string().regex(/^\d{6,8}$/, 'PIN: 6–8 Ziffern').refine((p) => !WEAK_PIN(p), 'PIN zu einfach (keine Reihen wie 123456 oder gleiche Ziffern)');
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((d) => !Number.isNaN(Date.parse(d)), 'ungültiges Datum');
 const iso = z.string().datetime({ offset: true });
 const cents = (max) => z.number().int().min(0).max(max);
 const note = z.string().trim().max(200).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen');
 
-const loginStaff = z.object({ ref, pin }).strict();
+const loginStaff = z.object({ ref, pin: z.string().regex(/^\d{6,8}$/, 'PIN: 6–8 Ziffern') }).strict(); // beim Anmelden nur Format pruefen
 const loginOwner = z.object({ apiKey: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/) }).strict();
 const shiftStart = z.object({ kind: KIND, location: LOC }).strict();
 const shiftManual = z.object({ staffRef: ref, kind: KIND, location: LOC, start: iso, end: iso }).strict()
@@ -214,7 +215,10 @@ function createTeamRouter({ store, keys, sessions, logger }) {
   }));
 
   r.get('/products', wrap(async (req, res) => {
-    const list = (await store.listDocs('products')).filter((p) => req.session.role === 'owner' || p.active !== false);
+    const owner = req.session.role === 'owner';
+    const list = (await store.listDocs('products')).filter((p) => owner || p.active !== false)
+      // Team bekommt nur, was die Kasse braucht – keine Einkaufspreise, Margen oder Plattform-Auszahlungen
+      .map((p) => (owner ? p : (({ costCents, payoutCents, source, createdAt, updatedAt, ...rest }) => rest)(p)));
     res.json(list.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)));
   }));
 
@@ -320,7 +324,13 @@ function createTeamRouter({ store, keys, sessions, logger }) {
   r.get('/bar/sessions/:id', wrap(async (req, res) => {
     const ses = await loadOpen(req.params.id);
     if (!ses) return res.status(404).json({ error: 'not_found' });
-    if (req.session.role === 'staff' && (Date.parse(berlinDate(new Date())) - Date.parse(ses.date)) / 86_400_000 > 3) return res.status(403).json({ error: 'forbidden' });
+    if (req.session.role === 'staff') {
+      if ((Date.parse(berlinDate(new Date())) - Date.parse(ses.date)) / 86_400_000 > 3) return res.status(403).json({ error: 'forbidden' });
+      const mine = ses.openedBy === req.staff.ref || ses.closedBy === req.staff.ref;
+      const shift = (await store.listDocs('shifts')).find((x) => x.staffRef === req.staff.ref && !x.end && !x.helper);
+      const sameStation = shift && ses.location === shift.location && stationOf(ses) === stationForKind(shift.kind);
+      if (!mine && !sameStation) return res.status(403).json({ error: 'forbidden' });
+    }
     res.json(await settlement(ses));
   }));
 
@@ -330,7 +340,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const [courses, enrollments, staff, shifts, barsessions, sales, products, settings, invoices, purchases] = await Promise.all([
       store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'), store.listDocs('invoices'), store.listDocs('purchases'),
     ]);
-    res.json(computeDashboard({ ...range, invoices, purchases, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings }));
+    res.json(computeDashboard({ ...range, invoices, purchases, courses, enrollments, staff, shifts, barsessions, sales, products, settings }));
   }));
 
   // --- Wochenplan (Chef) ---
@@ -403,7 +413,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const [courses, enrollments, staff, shifts, barsessions, sales, products, settings] = await Promise.all([
       store.listCourses({}), store.listAllEnrollments(), store.listDocs('staff'), store.listDocs('shifts'), store.listDocs('barsessions'), store.listDocs('sales'), store.listDocs('products'), store.getDoc('settings', 'main'),
     ]);
-    res.json(computeYear({ year, courses, enrollments, staff, shifts, barsessions, sales: sales.filter((x) => !x.voided), products, settings, purchases: await store.listDocs('purchases') }));
+    res.json(computeYear({ year, courses, enrollments, staff, shifts, barsessions, sales, products, settings, purchases: await store.listDocs('purchases') }));
   }));
 
   r.get('/bar/sessions', owner, wrap(async (req, res) => {

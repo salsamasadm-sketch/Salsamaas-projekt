@@ -381,3 +381,31 @@ test('Suchmaschinen: robots.txt verbietet alles, jede Antwort mit noindex', asyn
   assert.match((await fetch(`${s.base}/app/`)).headers.get('x-robots-tag'), /noindex/);
   s.close();
 });
+
+test('Sicherheit: schwache PINs abgelehnt, Team sieht keine Einkaufspreise, fremde Abrechnungen gesperrt, Storno-Hinweis', async () => {
+  const s = await start();
+  const { chef, lena, cola } = await setup(s);
+  for (const weak of ['123456', '111111', '654321', '12345678']) {
+    assert.equal((await s.call('POST', '/app/api/staff', { token: chef, body: { ref: `x${weak}`, pin: weak, hourlyRateCents: 1400 } })).status, 400);
+  }
+  await s.call('PATCH', `/app/api/products/${cola.id}`, { token: chef, body: { costCents: 52 } });
+  const forStaff = (await s.call('GET', '/app/api/products', { token: lena })).body.find((p) => p.id === cola.id);
+  assert.equal('costCents' in forStaff, false);
+  assert.equal((await s.call('GET', '/app/api/products', { token: chef })).body.find((p) => p.id === cola.id).costCents, 52);
+  // Chef oeffnet eine Tuer-Kasse; Lena (ohne passende Schicht) darf deren Abrechnung nicht sehen
+  const door = (await s.call('POST', '/app/api/bar/open', { token: chef, body: { location: 'pasing', station: 'tuer', cashStartCents: 0 } })).body;
+  assert.equal((await s.call('GET', `/app/api/bar/sessions/${door.id}`, { token: lena })).status, 403);
+  // 3 Stornos an der Theke -> Hinweis fuer den Chef
+  await s.call('POST', '/app/api/shifts/start', { token: lena, body: { kind: 'bar', location: 'maxvorstadt' } });
+  const ses = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'maxvorstadt', cashStartCents: 0, stockStart: { [cola.id]: 20 } } })).body;
+  for (let i = 0; i < 3; i++) {
+    const sale = (await s.call('POST', `/app/api/bar/${ses.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 2 }] } })).body;
+    await s.call('DELETE', `/app/api/bar/${ses.id}/sales/${sale.id}`, { token: lena });
+  }
+  assert.equal((await s.call('GET', `/app/api/bar/sessions/${ses.id}`, { token: lena })).status, 200); // eigene Kasse ok
+  const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
+  assert.ok(d.todos.some((t) => /3 Stornos über 21,00 € \(lena 3\)/.test(t.text)));
+  const res = await fetch(`${s.base}/app/`);
+  assert.match(res.headers.get('permissions-policy'), /camera=\(\)/);
+  s.close();
+});
