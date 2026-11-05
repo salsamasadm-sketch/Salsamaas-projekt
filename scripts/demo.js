@@ -27,8 +27,8 @@ const pick = (a) => a[Math.floor(rnd() * a.length)];
 async function seed() { return seedInto(store); }
 async function seedInto(store) {
   const now = Date.now();
-  const fees = [['Kurs 4 Wochen', 9900, 'kursgebuehr'], ['Einzelstunde', 1500, 'kursgebuehr'], ['10er-Karte', 12000, 'kursgebuehr']]
-    .map(([name, priceCents, category], i) => ({ id: `k${i + 1}`, name, priceCents, category, active: true, sort: 5 + i, createdAt: new Date(now).toISOString() }));
+  const { COURSE_FEES } = require('../src/catalog');
+  const fees = COURSE_FEES.map((c, i) => ({ id: `k${i + 1}`, ...c, active: true, sort: 50 + i, createdAt: new Date(now).toISOString() }));
   for (const p of fees) await store.putDoc('products', p);
   const { TICKETS } = require('../src/catalog');
   const tickets = TICKETS.map((c, i) => ({ id: `t${i + 1}`, ...c, active: true, sort: i, createdAt: new Date(now).toISOString() }));

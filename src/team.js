@@ -35,7 +35,7 @@ const ownShift = z.object({ kind: KIND, location: LOC, start: iso, end: iso }).s
   .refine((s) => new Date(s.end) > new Date(s.start) && new Date(s.end) - new Date(s.start) <= 16 * 3_600_000, 'Ende muss nach Start liegen (max. 16 Std.)');
 const CATEGORIES = ['eintritt', 'checkin', 'workshop', 'kursgebuehr', 'softdrinks', 'bier', 'wein', 'cocktails', 'longdrinks', 'shots', 'heiss', 'snacks', 'sonstiges'];
 const pname = z.string().trim().min(1).max(40).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen');
-const { CATALOG, TICKETS, WRISTBAND_CENTS } = require('./catalog');
+const { CATALOG, TICKETS, COURSE_FEES, WRISTBAND_CENTS } = require('./catalog');
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Farbe als #RRGGBB');
 const passFields = { platform: z.string().trim().min(1).max(30).refine((s) => !/[<>\u0000-\u001F]/.test(s)).optional(), checkinFor: z.enum(['abend', 'workshop']).optional(), payoutCents: cents(100_000).nullable().optional() };
 const productCreate = z.object({ ...passFields, name: pname, color: hexColor.nullable().optional(), priceCents: cents(100_000), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES), active: z.boolean().default(true), sort: z.number().int().min(0).max(999).default(100) }).strict();
@@ -431,7 +431,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
   r.post('/products/import-catalog', owner, wrap(async (req, res) => {
     const existing = new Set((await store.listDocs('products')).map((p) => p.name.toLowerCase()));
     let n = 0;
-    for (const [i, c] of [...TICKETS, ...CATALOG].entries()) {
+    for (const [i, c] of [...TICKETS, ...COURSE_FEES, ...CATALOG].entries()) {
       if (existing.has(c.name.toLowerCase())) continue;
       await store.putDoc('products', { id: crypto.randomUUID(), name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, ...(c.source && { source: c.source }), ...(c.platform && { platform: c.platform, checkinFor: c.checkinFor, payoutCents: c.payoutCents }), category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date().toISOString() }); n++;
     }

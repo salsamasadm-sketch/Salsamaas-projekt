@@ -46,9 +46,23 @@ const TICKETS = [
   { name: 'Wellhub · Workshop', priceCents: 0, category: 'checkin', platform: 'Wellhub', checkinFor: 'workshop', payoutCents: 1500, costCents: 0, color: '#e2336b', source: 'Check-in = bezahlt · danach Übungsabend +5 €' },
 ];
 
+/**
+ * Kursgebuehren vor Ort (Preise laut salsamas.de / salsamas-pasing.de, Stand 11/2026).
+ * Preise gelten pro Person und Monat; 10er-Karte 3 Monate gueltig.
+ */
+const COURSE_FEES = [
+  { name: 'Kurs 4 × 75 Min.', priceCents: 8900, category: 'kursgebuehr', costCents: 0, source: 'Beginner/Mittelstufe, Einzelanmeldung' },
+  { name: 'Kurs 4 × 75 Min. Studierende', priceCents: 7900, category: 'kursgebuehr', costCents: 0 },
+  { name: 'Kurs 4 × 60 Min.', priceCents: 7900, category: 'kursgebuehr', costCents: 0, source: 'z. B. Fortgeschrittene Pasing' },
+  { name: 'Kurs 4 × 60 Min. Studierende', priceCents: 6900, category: 'kursgebuehr', costCents: 0 },
+  { name: 'Kurs 2 × 120 Min.', priceCents: 10000, category: 'kursgebuehr', costCents: 0, source: 'z. B. Mittelstufe 1 Pasing' },
+  { name: '10er-Karte', priceCents: 24900, category: 'kursgebuehr', costCents: 0, source: '3 Monate gültig' },
+  { name: '10er-Karte Studierende', priceCents: 21900, category: 'kursgebuehr', costCents: 0, source: '3 Monate gültig' },
+];
+
 /** Farben fuer Eintritt/Workshops/Kursgebuehren und als Rueckfall nach Namen (Kassen-Buttons) */
 const CATEGORY_COLORS = { checkin: '#5b6b7f', eintritt: '#14161b', workshop: '#c2185b', kursgebuehr: '#2b6cb0', softdrinks: '#5aaee0', bier: '#f2c230', wein: '#d6df8a', cocktails: '#f26b21', longdrinks: '#4a2c1a', shots: '#8d6e63', heiss: '#795548', snacks: '#a1887f', sonstiges: '#8a93a3' };
 /** Eventbaender (METRO, Tyvek neongelb): 1 Band pro Gast, Annahme 100er-Pack 5,99 € -> 0,06 € */
 const WRISTBAND_CENTS = 6;
 
-module.exports = { CATALOG, TICKETS, CATEGORY_COLORS, WRISTBAND_CENTS };
+module.exports = { CATALOG, TICKETS, COURSE_FEES, CATEGORY_COLORS, WRISTBAND_CENTS };
