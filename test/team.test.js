@@ -409,3 +409,15 @@ test('Sicherheit: schwache PINs abgelehnt, Team sieht keine Einkaufspreise, frem
   assert.match(res.headers.get('permissions-policy'), /camera=\(\)/);
   s.close();
 });
+
+test('Ueber Firebase Hosting: echte Client-IP fuer Anmelde-Sperren (nicht alle Handys teilen eine IP)', async () => {
+  const s = await start();
+  await setup(s);
+  const viaHosting = (clientIp) => ({ 'x-fh-requested-host': 'salsamas.web.app', 'x-forwarded-for': `${clientIp}, 199.36.158.100` });
+  // jeweils andere Kuerzel, damit die IP-Sperre (10 / 15 Min.) greift und nicht die Kuerzel-Sperre
+  const login = (ip, ref) => fetch(`${s.base}/app/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...viaHosting(ip) }, body: JSON.stringify({ ref, pin: '987654' }) });
+  for (let i = 0; i < 10; i++) await login('203.0.113.7', `test${i}`);
+  assert.equal((await login('203.0.113.7', 'testx')).status, 429); // dieses Handy ist gesperrt
+  assert.equal((await login('198.51.100.9', 'testy')).status, 401); // anderes Handy nicht
+  s.close();
+});
