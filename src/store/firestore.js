@@ -6,7 +6,7 @@ const DOC_COLLECTIONS = ['staff', 'shifts', 'settings', 'products', 'barsessions
 
 /** Dauerhafter Speicher fuer Google Cloud (Cloud Run nutzt automatisch das Service-Konto). */
 class FirestoreStore {
-  constructor(db = new Firestore()) {
+  constructor(db = new Firestore({ ignoreUndefinedProperties: true })) {
     this.db = db;
     this.courses = db.collection('courses');
     this.enrollments = db.collection('enrollments');
