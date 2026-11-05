@@ -60,6 +60,9 @@ function createApp({ store, keys, sessions, allowedOrigins = [], logger = (l) =>
     return null;
   };
 
+  // Nicht in Suchmaschinen: jede Antwort mit noindex, dazu robots.txt die alles verbietet
+  app.use((req, res, next) => { res.set('X-Robots-Tag', 'noindex, nofollow, noarchive'); next(); });
+  app.get('/robots.txt', (req, res) => res.type('text/plain').send('User-agent: *\nDisallow: /\n'));
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
   // --- Oeffentlich (ohne Schluessel): nur veroeffentlichte Kurse, keine internen Daten ---

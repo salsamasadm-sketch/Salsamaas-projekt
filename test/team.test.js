@@ -372,3 +372,12 @@ test('Anlass: Uebungsabend ohne Kursgebuehren, Kursbetrieb mit allem', () => {
   assert.equal(allowedAtStation('tuer', 'kursgebuehr', 'kurs'), true);
   assert.equal(allowedAtStation('tuer', 'cocktails', 'kurs'), false);
 });
+
+test('Suchmaschinen: robots.txt verbietet alles, jede Antwort mit noindex', async () => {
+  const s = await start();
+  const r = await fetch(`${s.base}/robots.txt`);
+  assert.equal(await r.text(), 'User-agent: *\nDisallow: /\n');
+  assert.match(r.headers.get('x-robots-tag'), /noindex/);
+  assert.match((await fetch(`${s.base}/app/`)).headers.get('x-robots-tag'), /noindex/);
+  s.close();
+});
