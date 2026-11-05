@@ -36,10 +36,18 @@ const TICKETS = [
   { name: 'Workshop mit Partner (p. P.)', priceCents: 1500, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
   { name: '2 Workshops Einzel', priceCents: 3500, category: 'workshop', costCents: 0 },
   { name: '2 Workshops mit Partner (p. P.)', priceCents: 3000, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
+  // Pass-Plattformen: Check-in gilt als Zahlung (0 € an der Tuer). Auszahlung pro Check-in geschaetzt.
+  { name: 'Übungsabend nach Workshop-Check-in', priceCents: 500, category: 'eintritt', costCents: 6, source: 'Aufzahlung, wer per Pass zum Workshop eingecheckt hat' },
+  { name: 'Wellpass · Übungsabend', priceCents: 0, category: 'checkin', platform: 'Wellpass', checkinFor: 'abend', payoutCents: 1300, costCents: 6, color: '#0e9aa7', source: 'Check-in = bezahlt · ca. 13 € Auszahlung' },
+  { name: 'Wellpass · Workshop', priceCents: 0, category: 'checkin', platform: 'Wellpass', checkinFor: 'workshop', payoutCents: 1300, costCents: 0, color: '#0e9aa7', source: 'Check-in = bezahlt · danach Übungsabend +5 €' },
+  { name: 'Urban Sports Club · Übungsabend', priceCents: 0, category: 'checkin', platform: 'Urban Sports Club', checkinFor: 'abend', payoutCents: 1000, costCents: 6, color: '#2341e0', source: 'Check-in = bezahlt · ca. 10 € Auszahlung' },
+  { name: 'Urban Sports Club · Workshop', priceCents: 0, category: 'checkin', platform: 'Urban Sports Club', checkinFor: 'workshop', payoutCents: 1000, costCents: 0, color: '#2341e0', source: 'Check-in = bezahlt · danach Übungsabend +5 €' },
+  { name: 'Wellhub · Übungsabend', priceCents: 0, category: 'checkin', platform: 'Wellhub', checkinFor: 'abend', payoutCents: 1500, costCents: 6, color: '#e2336b', source: 'Check-in = bezahlt · ca. 15 € Auszahlung' },
+  { name: 'Wellhub · Workshop', priceCents: 0, category: 'checkin', platform: 'Wellhub', checkinFor: 'workshop', payoutCents: 1500, costCents: 0, color: '#e2336b', source: 'Check-in = bezahlt · danach Übungsabend +5 €' },
 ];
 
 /** Farben fuer Eintritt/Workshops/Kursgebuehren und als Rueckfall nach Namen (Kassen-Buttons) */
-const CATEGORY_COLORS = { eintritt: '#14161b', workshop: '#c2185b', kursgebuehr: '#2b6cb0', softdrinks: '#5aaee0', bier: '#f2c230', wein: '#d6df8a', cocktails: '#f26b21', longdrinks: '#4a2c1a', shots: '#8d6e63', heiss: '#795548', snacks: '#a1887f', sonstiges: '#8a93a3' };
+const CATEGORY_COLORS = { checkin: '#5b6b7f', eintritt: '#14161b', workshop: '#c2185b', kursgebuehr: '#2b6cb0', softdrinks: '#5aaee0', bier: '#f2c230', wein: '#d6df8a', cocktails: '#f26b21', longdrinks: '#4a2c1a', shots: '#8d6e63', heiss: '#795548', snacks: '#a1887f', sonstiges: '#8a93a3' };
 /** Eventbaender (METRO, Tyvek neongelb): 1 Band pro Gast, Annahme 100er-Pack 5,99 € -> 0,06 € */
 const WRISTBAND_CENTS = 6;
 

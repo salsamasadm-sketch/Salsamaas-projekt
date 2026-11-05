@@ -274,7 +274,7 @@ test('Getraenkekarte, Einkaufspreise, Wareneinsatz und Einkaeufe', async () => {
   const s = await start();
   const { chef } = await setup(s);
   const imp = (await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body;
-  assert.equal(imp.created, 19); // 14 Getränke + 6 Tickets, 'Eintritt Übungsabend' gab es schon (keine Doppelung)
+  assert.equal(imp.created, 26); // 14 Getränke + 13 Tickets/Check-ins, 'Eintritt Übungsabend' gab es schon (keine Doppelung)
   assert.equal((await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body.created, 0); // keine Doppelungen
   const products = (await s.call('GET', '/app/api/products', { token: chef })).body;
   const helles = products.find((p) => p.name === 'Helles');
@@ -308,4 +308,28 @@ test('Gaeste zaehlen nur Eintritte zum Uebungsabend, Workshop-Tickets nicht dopp
   assert.equal(r.ticketRevenueCents, 6000);
   assert.equal(r.ticketCostCents, 30);    // 5 Eventbaender
   assert.equal(r.cashDiffCents, 0);
+});
+
+test('Pass-Check-ins: Check-in = bezahlt, erwartete Auszahlung zaehlt zum Umsatz, nicht zur Kasse', () => {
+  const { TICKETS } = require('../src/catalog');
+  const { computeDashboard } = require('../src/dashboard');
+  const products = TICKETS.map((t, i) => ({ id: `t${i}`, ...t }));
+  const id = (n) => products.find((p) => p.name === n).id;
+  const sales = [
+    { sessionId: 's', payment: 'bar', items: [{ productId: id('Wellpass · Übungsabend'), qty: 2, priceCents: 0 }] },
+    { sessionId: 's', payment: 'bar', items: [{ productId: id('Urban Sports Club · Workshop'), qty: 1, priceCents: 0 }] },
+    { sessionId: 's', payment: 'bar', items: [{ productId: id('Übungsabend nach Workshop-Check-in'), qty: 1, priceCents: 500 }] },
+    { sessionId: 's', payment: 'karte', items: [{ productId: id('Wellhub · Übungsabend'), qty: 1, priceCents: 0 }] },
+  ];
+  const ses = { id: 's', date: '2026-11-07', location: 'pasing', station: 'tuer', cashStartCents: 0, cashEndCents: 500, closedAt: '2026-11-07T23:00:00Z' };
+  const r = computeSettlement(ses, sales, products);
+  assert.equal(r.guests, 4);                    // 2 Wellpass + 1 Aufzahlung + 1 Wellhub (Workshop-Check-in zaehlt nicht)
+  assert.equal(r.platformCheckins, 4);
+  assert.equal(r.platformRevenueCents, 2 * 1300 + 1000 + 1500);
+  assert.equal(r.cashExpectedCents, 500);       // nur die 5-€-Aufzahlung ist Bargeld
+  assert.equal(r.cashDiffCents, 0);
+  const d = computeDashboard({ month: '2026-11', barsessions: [ses], sales, products });
+  assert.equal(d.bar.platformRevenueCents, 5100);
+  assert.equal(d.totals.incomeCents, 500 + 5100);
+  assert.deepEqual(d.bar.platforms.map((p) => [p.platform, p.checkins]), [['Wellpass', 2], ['Urban Sports Club', 1], ['Wellhub', 1]]);
 });

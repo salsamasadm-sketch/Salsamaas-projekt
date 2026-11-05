@@ -87,6 +87,15 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
   // Bar-Umsatz = nur Getraenke/Snacks. Eintritt und Workshops laufen getrennt.
   const barRevenue = sum(bars, (b) => b.drinksRevenueCents);
   const ticketRevenue = sum(bars, (b) => b.ticketRevenueCents);
+  // Pass-Plattformen (Wellpass, Urban Sports Club, Wellhub): erwartete Auszahlung je Check-in
+  const platformRevenue = sum(bars, (b) => b.platformRevenueCents || 0);
+  const platformMap = new Map();
+  for (const b of bars) for (const pl of b.platforms || []) {
+    const r = platformMap.get(pl.platform) || { platform: pl.platform, checkins: 0, abend: 0, workshop: 0, expectedCents: 0, payoutMissing: false };
+    r.checkins += pl.checkins; r.abend += pl.abend; r.workshop += pl.workshop; r.expectedCents += pl.expectedCents; r.payoutMissing = r.payoutMissing || pl.payoutMissing;
+    platformMap.set(pl.platform, r);
+  }
+  const platformRows = [...platformMap.values()].sort((a, b) => b.checkins - a.checkins);
   // Gaeste kommen von der Tuer, Getraenke von der Theke: pro Abend (Datum + Standort) zusammenfuehren
   const nightsMap = new Map();
   for (const b of bars) { const k = `${b.date}_${b.location}`; const r = nightsMap.get(k) || { guests: 0, drinks: 0 }; r.guests += b.guests || 0; r.drinks += b.drinksRevenueCents; nightsMap.set(k, r); }
@@ -139,13 +148,14 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
   // --- Gesamt ---
   const fixedMonthly = sum(Object.values(cfg.fixedCostsCents), (v) => v || 0);
   const fixed = proratedFixed(fixedMonthly, range);
-  const income = barRevenue + ticketRevenue + courseRevenue;
+  const income = barRevenue + ticketRevenue + platformRevenue + courseRevenue;
   const costs = personnelCost + fixed + cogs + ticketMaterial;
   const profit = income - costs;
 
   const kpis = [
     { id: 'profit', label: 'Ergebnis Monat', unit: 'eur', value: profit, hint: `Einnahmen ${eur(income)} − Kosten ${eur(costs)}`, status: fixedMonthly === 0 ? 'none' : profit >= 0 ? 'ok' : 'bad' },
     { id: 'ticketRevenue', label: 'Eintritt & Workshops', unit: 'eur', value: ticketRevenue, hint: `${sum(bars, (b) => b.ticketCount)} Tickets`, status: 'none' },
+    { id: 'platformRevenue', label: 'Pass-Plattformen (erwartet)', unit: 'eur', value: platformRevenue, hint: `${sum(platformRows, (p) => p.checkins)} Check-ins${platformRows.length ? ` · ${platformRows.map((p) => `${p.platform} ${p.checkins}`).join(', ')}` : ''}`, status: 'none' },
     { id: 'barRevenue', label: 'Getränke-Umsatz', unit: 'eur', value: barRevenue, hint: `${nightsMap.size} Abende${guests ? `, ${guests} Gäste` : ''}`, status: 'none' },
     { id: 'cashDiff', label: 'Kassendifferenz', unit: 'eur', value: cashDiff, hint: `${closed.length} Abrechnungen`, status: cashDiff == null ? 'none' : Math.abs(cashDiff) <= 500 ? 'ok' : Math.abs(cashDiff) <= 2000 ? 'warn' : 'bad' },
     { id: 'missing', label: 'Inventar-Fehlmenge', unit: 'count', value: closed.length ? missingUnits : null, hint: missingUnits ? `≈ ${eur(missingValue)} Umsatz` : 'Bestand passt', status: !closed.length ? 'none' : missingUnits === 0 ? 'ok' : missingUnits <= 3 ? 'warn' : 'bad' },
@@ -230,6 +240,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
   }
   if (utilizationPct != null && utilizationPct >= 95) insights.push({ level: 'info', text: `Kurse fast voll (${pct(utilizationPct)}). Zusatztermin oder Warteliste lohnt sich.` });
   if (barRevenue > 0 && cogs > 0 && (cogs / barRevenue) * 100 > t.costRatioPct) insights.push({ level: 'warn', text: `Wareneinsatz Getränke ${pct((cogs / barRevenue) * 100)} (Ziel ${pct(t.costRatioPct)}). Preise der Getränke mit der kleinsten Marge prüfen (Getränke-Tab).` });
+  for (const p of platformRows.filter((x) => x.payoutMissing)) insights.push({ level: 'info', text: `${p.platform}: ${p.checkins} Check-ins, aber noch keine Auszahlung pro Check-in hinterlegt – im Getränke-Tab bei den Pass-Check-ins eintragen.` });
   if (noCost.length) insights.push({ level: 'info', text: `Für ${noCost.slice(0, 4).join(', ')}${noCost.length > 4 ? ' u. a.' : ''} fehlt der Einkaufspreis – der Wareneinsatz ist dadurch zu niedrig. Im Getränke-Tab ergänzen.` });
   if (missingUnits > 0) insights.push({ level: 'warn', text: `Im Monat fehlen ${missingUnits} Artikel laut Inventar (≈ ${eur(missingValue)} Umsatz). Zählung beim Öffnen/Schließen zu zweit machen und Freigetränke immer als „Personal/Gratis" buchen.` });
   if (bars.length === 0 && monthShifts.length === 0) insights.push({ level: 'info', text: 'Für diesen Monat gibt es noch keine Bar- oder Schichtdaten.' });
@@ -288,7 +299,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
     kpis,
     todos,
     insights,
-    bar: { revenueCents: barRevenue, ticketRevenueCents: ticketRevenue, ticketMix: [...ticketMix.values()].sort((a, b) => b.qty - a.qty), guests, nights: nightsMap.size, cashDiffCents: cashDiff, missingUnits, missingValueCents: missingValue, daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)), byWeekday: wdRows, topProducts: [...top.values()].filter((x) => x.qty > 0).sort((a, b) => b.revenueCents - a.revenueCents), sessions: bars.sort((a, b) => b.date.localeCompare(a.date)) },
+    bar: { revenueCents: barRevenue, ticketRevenueCents: ticketRevenue, platformRevenueCents: platformRevenue, platforms: platformRows, ticketMix: [...ticketMix.values()].sort((a, b) => b.qty - a.qty), guests, nights: nightsMap.size, cashDiffCents: cashDiff, missingUnits, missingValueCents: missingValue, daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)), byWeekday: wdRows, topProducts: [...top.values()].filter((x) => x.qty > 0).sort((a, b) => b.revenueCents - a.revenueCents), sessions: bars.sort((a, b) => b.date.localeCompare(a.date)) },
     shopping,
     personnel: { totalCents: personnelCost, barCents: barPersonnelCost, byStaff, helpers: monthShifts.filter((s) => s.helper).map((s) => ({ id: s.id, name: s.staffRef, date: berlinDate(s.start), hours: Math.round(shiftHours(s, now) * 100) / 100, payCents: shiftCost(s, now), payout: s.payout, paid: !!s.paid, location: s.location })) },
     courses: { utilizationPct, participants, capacity: cap, openCount: openEnr.length, openOwedCents: openOwed, rows: courseRows },
@@ -306,7 +317,7 @@ function computeYear({ year, ...data }) {
     if (empty) { d.totals.costsCents -= d.totals.fixedCents; d.totals.profitCents += d.totals.fixedCents; d.totals.fixedCents = 0; }
     months.push({ empty,
       month: d.month, nights: d.bar.nights, guests: d.bar.guests,
-      ticketCents: d.bar.ticketRevenueCents, drinksCents: d.bar.revenueCents, courseCents: d.totals.incomeCents - d.bar.revenueCents - d.bar.ticketRevenueCents,
+      ticketCents: d.bar.ticketRevenueCents + d.bar.platformRevenueCents, platformCents: d.bar.platformRevenueCents, drinksCents: d.bar.revenueCents, courseCents: d.totals.incomeCents - d.bar.revenueCents - d.bar.ticketRevenueCents - d.bar.platformRevenueCents,
       incomeCents: d.totals.incomeCents, personnelCents: d.personnel.totalCents, cogsCents: d.totals.cogsCents, fixedCents: d.totals.fixedCents, costsCents: d.totals.costsCents, profitCents: d.totals.profitCents,
       cashDiffCents: d.bar.cashDiffCents, missingUnits: d.bar.missingUnits,
       perGuestCents: d.kpis.find((k) => k.id === 'barPerGuest').value,

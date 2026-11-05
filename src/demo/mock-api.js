@@ -8,7 +8,7 @@
   const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = window.__cockpit.dashboard;
   const { computeSettlement, buildHelpers, helperShift } = window.__cockpit.bar;
   const { computeWeek, computeInvoices, mondayOf, addDays } = window.__cockpit.plan;
-  const KEY = 'cockpit.demo.db.v13';
+  const KEY = 'cockpit.demo.db.v14';
   const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
   let db;
   try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
@@ -101,7 +101,7 @@
       if (!inScope(scope(), ses)) return err(403, 'wrong_station');
       if (method === 'GET') return json(200, list('sales').filter((x) => x.sessionId === ses.id).sort((a, b) => b.at.localeCompare(a.at)));
       if (ses.closedAt) return err(409, 'session_closed');
-      const isTicket = (pid) => ['eintritt', 'workshop'].includes(db.products[pid]?.category);
+      const isTicket = (pid) => ['eintritt', 'workshop', 'checkin'].includes(db.products[pid]?.category);
       if (body.items.some((it) => !db.products[it.productId] || (stOf(ses) !== 'kombi' && isTicket(it.productId) !== (stOf(ses) === 'tuer')))) return err(400, 'wrong_station');
       const items = body.items.map((it) => ({ productId: it.productId, qty: it.qty, priceCents: db.products[it.productId].priceCents }));
       const sale = { id: uid(), sessionId: ses.id, at: new Date().toISOString(), by, payment: body.payment, items, ...(body.note && { note: String(body.note).slice(0, 60) }) };
@@ -162,7 +162,7 @@
     // Getraenkekarte + Einkaeufe
     if (method === 'POST' && path === '/products/import-catalog') {
       const have = new Set(list('products').map((p) => p.name.toLowerCase())); let n = 0;
-      for (const [i, c] of [...window.__cockpit.catalog.TICKETS, ...window.__cockpit.catalog.CATALOG].entries()) { if (have.has(c.name.toLowerCase())) continue; const id = uid(); db.products[id] = { id, name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, source: c.source, category: c.category, active: true, sort: 100 + i * 10 }; n++; }
+      for (const [i, c] of [...window.__cockpit.catalog.TICKETS, ...window.__cockpit.catalog.CATALOG].entries()) { if (have.has(c.name.toLowerCase())) continue; const id = uid(); db.products[id] = { id, name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, source: c.source, platform: c.platform, checkinFor: c.checkinFor, payoutCents: c.payoutCents, category: c.category, active: true, sort: 100 + i * 10 }; n++; }
       save(); return json(200, { created: n });
     }
     if (method === 'GET' && path === '/purchases') return json(200, list('purchases').filter((p) => inR(p.date)).sort((a, b) => b.date.localeCompare(a.date)));

@@ -81,10 +81,14 @@ async function seedInto(store) {
     for (let g = 0; g < guests; g++) {
       // Workshop am Samstag: Teilnehmer kaufen Workshop-Tickets und bleiben mit 0-€-Eintritt
       if (withWorkshop && g < 18) {
-        const w = pick([tickets[2], tickets[3], tickets[3], tickets[4], tickets[5], tickets[5]]);
+        const passWs = tickets.filter((x) => x.category === 'checkin' && x.checkinFor === 'workshop');
+        const w = g % 4 === 0 ? pick(passWs) : pick([tickets[2], tickets[3], tickets[3], tickets[4], tickets[5], tickets[5]]);
         await store.putDoc('sales', { id: crypto.randomUUID(), sessionId: doorSid, at: new Date(open.getTime() - 4 * 3_600_000).toISOString(), by: 'sofia', payment: rnd() < 0.5 ? 'bar' : 'karte', items: [{ productId: w.id, qty: 1, priceCents: w.priceCents }] });
       }
-      const t = withWorkshop && g < 14 ? tickets[1] : tickets[0];
+      // Pass-Gaeste: ca. 20 % checken per Wellpass / Urban Sports Club / Wellhub ein (Check-in = bezahlt)
+      const passAbend = tickets.filter((x) => x.category === 'checkin' && x.checkinFor === 'abend');
+      const r0 = rnd();
+      const t = withWorkshop && g < 14 ? (g % 4 === 0 ? tickets.find((x) => x.name === 'Übungsabend nach Workshop-Check-in') : tickets[1]) : r0 < 0.1 ? passAbend[0] : r0 < 0.18 ? passAbend[1] : r0 < 0.21 ? passAbend[2] : tickets[0];
       await store.putDoc('sales', { id: crypto.randomUUID(), sessionId: doorSid, at: new Date(open.getTime() + rnd() * 90 * 60_000).toISOString(), by: 'sofia', payment: rnd() < 0.6 ? 'bar' : 'karte', items: [{ productId: t.id, qty: 1, priceCents: t.priceCents }] });
     }
     // Kursgebuehren vor Ort (vor dem Uebungsabend)

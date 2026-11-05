@@ -17,7 +17,7 @@ function buildHelpers(session, input = [], newId) {
 const helperShift = (session, hl) => ({ id: hl.id, staffRef: hl.name, helper: true, kind: session.station === 'tuer' ? 'empfang' : session.station === 'kombi' ? 'kombi' : 'bar', location: session.location, start: hl.start, end: hl.end, rateCents: hl.rateCents, payout: hl.payout, paid: hl.payout === 'bar', sessionId: session.id, createdBy: 'kasse' });
 
 /** Kategorien ohne Inventar: Eintritt und Workshops (zaehlen als Gaeste). */
-const TICKET_CATEGORIES = ['eintritt', 'workshop'];
+const TICKET_CATEGORIES = ['eintritt', 'workshop', 'checkin'];
 /** Kursgebuehren vor Ort: kein Inventar, keine Gaeste, zaehlen zu den Kurseinnahmen. */
 const COURSE_CATEGORIES = ['kursgebuehr'];
 /**
@@ -35,7 +35,11 @@ function computeSettlement(session, sales, products = []) {
   const isCourse = new Set(products.filter((p) => COURSE_CATEGORIES.includes(p.category)).map((p) => p.id));
   const tickets = new Map();
   const fees = new Map();
-  const isEntry = new Set(products.filter((p) => p.category === 'eintritt').map((p) => p.id));
+  // Gast zum Uebungsabend: Eintritt (auch 0-€/Aufzahlung) oder Pass-Check-in fuer den Uebungsabend
+  const prodById = new Map(products.map((p) => [p.id, p]));
+  const isEntry = new Set(products.filter((p) => p.category === 'eintritt' || (p.category === 'checkin' && p.checkinFor !== 'workshop')).map((p) => p.id));
+  const platforms = new Map();
+  let platformRev = 0, platformCount = 0;
   let ticketRev = 0, ticketCount = 0, entryCount = 0, courseRev = 0;
   const sold = new Map(); // productId -> { qty, revenueCents }
   let cash = 0, card = 0, count = 0, freeUnits = 0;
@@ -56,6 +60,15 @@ function computeSettlement(session, sales, products = []) {
         t.qty += it.qty; t.revenueCents += value; tickets.set(it.productId, t);
         ticketCount += it.qty; ticketRev += value;
         if (isEntry.has(it.productId)) entryCount += it.qty;
+        const pr = prodById.get(it.productId);
+        if (pr?.category === 'checkin') {
+          // Check-in = bezahlt ueber die Plattform; erwartete Auszahlung zaehlt zum Umsatz, nicht zur Kasse
+          const k = pr.platform || pr.name;
+          const pl = platforms.get(k) || { platform: k, checkins: 0, abend: 0, workshop: 0, expectedCents: 0, payoutMissing: false };
+          pl.checkins += it.qty; pl[pr.checkinFor === 'workshop' ? 'workshop' : 'abend'] += it.qty;
+          if (pr.payoutCents == null) pl.payoutMissing = true; else pl.expectedCents += it.qty * pr.payoutCents;
+          platforms.set(k, pl); platformCount += it.qty; platformRev += it.qty * (pr.payoutCents ?? 0);
+        }
         if (s.payment === 'karte') card += value; else if (s.payment !== 'gratis') cash += value;
         continue;
       }
@@ -104,6 +117,7 @@ function computeSettlement(session, sales, products = []) {
     // Gaeste = Eintritte zum Uebungsabend (Workshop-Tickets zaehlen nicht doppelt)
     guests: entryCount > 0 ? entryCount : ticketCount > 0 ? null : session.guests ?? null,
     workshopCount: ticketCount - entryCount,
+    platformCheckins: platformCount, platformRevenueCents: platformRev, platforms: [...platforms.values()],
   };
 }
 

@@ -4,11 +4,11 @@
   const $ = (s) => document.querySelector(s);
   const LOC = { maxvorstadt: 'Maxvorstadt', pasing: 'Pasing' };
   const KIND = { bar: 'Bar / Theke', empfang: 'Empfang / Tür', kombi: 'Tür + Theke (alles)', kurs: 'Unterricht', sonstiges: 'Sonstiges' };
-  const TICKET = ['eintritt', 'workshop', 'kursgebuehr']; // ohne Inventar
+  const TICKET = ['eintritt', 'checkin', 'workshop', 'kursgebuehr']; // ohne Inventar
   const FEE = 'kursgebuehr';
   // Getraenkefarben: eigene Farbe des Artikels, sonst nach Namen (bekannte Marken), sonst nach Kategorie
   const NAME_COLORS = [[/cola-?mix|spezi/i, '#b4561c'], [/zero/i, '#1a1a1a'], [/cola/i, '#e41e2b'], [/fanta/i, '#f7941d'], [/sprite/i, '#00a651'], [/red ?bull|energy/i, '#1f3f8f'], [/apfel/i, '#e0a526'], [/johannis|cassis/i, '#7b1e4b'], [/wasser|water/i, '#5aaee0'], [/aperol/i, '#f26b21'], [/hugo/i, '#8cc63f'], [/cuba|rum/i, '#4a2c1a'], [/rotwein|rot/i, '#7b1e2b'], [/weißwein|weisswein/i, '#d6df8a'], [/sekt|prosecco|crémant/i, '#e3cf8f'], [/helles|bier|radler|weizen/i, '#f2c230'], [/mojito/i, '#5cb85c'], [/caipi/i, '#9ccc65']];
-  const CAT_COLORS = { eintritt: '#14161b', workshop: '#c2185b', kursgebuehr: '#2b6cb0', softdrinks: '#5aaee0', bier: '#f2c230', wein: '#d6df8a', cocktails: '#f26b21', longdrinks: '#4a2c1a', shots: '#8d6e63', heiss: '#795548', snacks: '#a1887f', sonstiges: '#8a93a3' };
+  const CAT_COLORS = { checkin: '#5b6b7f', eintritt: '#14161b', workshop: '#c2185b', kursgebuehr: '#2b6cb0', softdrinks: '#5aaee0', bier: '#f2c230', wein: '#d6df8a', cocktails: '#f26b21', longdrinks: '#4a2c1a', shots: '#8d6e63', heiss: '#795548', snacks: '#a1887f', sonstiges: '#8a93a3' };
   const drinkColor = (p) => p.color || (NAME_COLORS.find(([re]) => re.test(p.name)) || [])[1] || CAT_COLORS[p.category] || '#8a93a3';
   // Lesbare Schrift auf der Farbe (hell/dunkel)
   const inkOn = (hex) => { const n = parseInt(hex.slice(1), 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255; return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#14161b' : '#ffffff'; };
@@ -16,9 +16,9 @@
   const STATION = { tuer: 'Tür · Eintritt', theke: 'Theke · Bar', kombi: 'Tür + Theke' };
   const STATION_SHORT = { tuer: 'Tür', theke: 'Theke', kombi: 'Kombi' };
   const STATION_KASSE = { tuer: 'Tür-Kasse', theke: 'Theken-Kasse', kombi: 'Kombi-Kasse (Tür + Theke)' };
-  const DOOR_CATS = ['eintritt', 'workshop'];
+  const DOOR_CATS = ['eintritt', 'checkin', 'workshop'];
   const allowedAt = (st, cat) => (st === 'kombi' ? true : st === 'tuer' ? DOOR_CATS.includes(cat) : !DOOR_CATS.includes(cat));
-  const CAT = { eintritt: 'Eintritt', workshop: 'Workshops', kursgebuehr: 'Kursgebühren', softdrinks: 'Softdrinks', bier: 'Bier', wein: 'Wein & Sekt', cocktails: 'Cocktails', longdrinks: 'Longdrinks', shots: 'Shots', heiss: 'Heißgetränke', snacks: 'Snacks', sonstiges: 'Sonstiges' };
+  const CAT = { eintritt: 'Eintritt', checkin: 'Pass-Check-ins (Check-in = bezahlt)', workshop: 'Workshops', kursgebuehr: 'Kursgebühren', softdrinks: 'Softdrinks', bier: 'Bier', wein: 'Wein & Sekt', cocktails: 'Cocktails', longdrinks: 'Longdrinks', shots: 'Shots', heiss: 'Heißgetränke', snacks: 'Snacks', sonstiges: 'Sonstiges' };
   const PAY = { bar: 'Bar', karte: 'Karte', gratis: 'Gratis/Personal' };
 
   // ---------- Hilfen ----------
@@ -419,6 +419,7 @@
       h('div', { class: 'kpis' },
         kpiTile('Umsatz gesamt', eur(s.revenueCents), `bar ${eur(s.cashSalesCents)} · Karte ${eur(s.cardSalesCents)}`, 'none'),
         (s.station === 'tuer' || s.ticketRevenueCents > 0) && kpiTile('Eintritt & Workshops', eur(s.ticketRevenueCents), `${s.guests ?? 0} Gäste`, 'none'),
+        s.platformCheckins > 0 && kpiTile('Pass-Check-ins', String(s.platformCheckins), `erwartet ${eur(s.platformRevenueCents)} · ${s.platforms.map((p) => `${p.platform} ${p.checkins}`).join(', ')}`, 'none'),
         s.station !== 'tuer' && s.courseFeeCents > 0 && kpiTile('Kursgebühren vor Ort', eur(s.courseFeeCents), `${s.courseFees.reduce((a, f) => a + f.qty, 0)} Zahlungen`, 'none'),
         s.station !== 'tuer' && kpiTile('Getränke', eur(s.drinksRevenueCents), `${s.salesCount} Buchungen${s.voidedCount ? `, ${s.voidedCount} Storno` : ''}`, 'none'),
         kpiTile('Kassendifferenz', signedEur(s.cashDiffCents), `Soll ${eur(s.cashExpectedCents)}, gezählt ${eur(s.cashCountedCents)}`, cashLevel),
@@ -453,7 +454,7 @@
       h('div', { class: 'value' }, value), deltaEl, sub && h('div', { class: 'sub' }, sub));
   }
   // Veraenderung zur Vorperiode; Farbe danach, ob mehr hier gut oder schlecht ist
-  const HIGHER_IS_BETTER = { cogsPct: false, profit: true, ticketRevenue: true, barRevenue: true, barPerGuest: true, utilizationPct: true, courseRevenue: true, missing: false, barPersonnelPct: false, personnelCost: false, openPaymentsPct: false };
+  const HIGHER_IS_BETTER = { platformRevenue: true, cogsPct: false, profit: true, ticketRevenue: true, barRevenue: true, barPerGuest: true, utilizationPct: true, courseRevenue: true, missing: false, barPersonnelPct: false, personnelCost: false, openPaymentsPct: false };
   function delta(k, prevLabel, inline) {
     if (k.prev == null || k.value == null || !(k.id in HIGHER_IS_BETTER)) return null;
     const diff = k.value - k.prev;
@@ -518,10 +519,15 @@
       h('h2', {}, 'Was jetzt zu tun ist'), h('div', { class: 'card' }, items(d.todos)),
       h('h2', {}, 'Was verbessert werden sollte'), h('div', { class: 'card' }, items(d.insights)),
       h('h2', {}, 'Umsatz pro Abend'), h('div', { class: 'card' }, barChart(d.bar.daily), h('p', { class: 'small muted legend' }, h('span', { class: 'sw drinks' }), 'Getränke  ', h('span', { class: 'sw tickets' }), 'Eintritt & Workshops')),
+      d.bar.platforms?.length > 0 && h('div', {}, h('h2', {}, 'Pass-Plattformen · zum Abgleich mit der Auszahlung'), h('div', { class: 'card table-wrap' }, h('table', {},
+        h('tr', {}, h('th', {}, 'Plattform'), h('th', { class: 'num' }, 'Check-ins'), h('th', { class: 'num' }, 'Übungsabend'), h('th', { class: 'num' }, 'Workshop'), h('th', { class: 'num' }, 'Erwartete Auszahlung')),
+        d.bar.platforms.map((p) => h('tr', {}, h('td', {}, p.platform), h('td', { class: 'num' }, p.checkins), h('td', { class: 'num' }, p.abend), h('td', { class: 'num' }, p.workshop), h('td', { class: `num${p.payoutMissing ? ' warntxt' : ''}` }, p.payoutMissing ? `${eur(p.expectedCents)} + ?` : eur(p.expectedCents))))),
+        h('p', { class: 'small muted' }, 'Am Monatsende mit der Abrechnung der Plattform vergleichen. Auszahlungsbeträge pro Check-in im Getränke-Tab anpassen.'))),
       d.bar.ticketMix.length > 0 && h('div', {}, h('h2', {}, 'Gäste-Mix'), h('div', { class: 'card table-wrap' }, h('table', {}, h('tr', {}, h('th', {}, 'Ticket'), h('th', { class: 'num' }, 'Personen'), h('th', { class: 'num' }, 'Umsatz')), d.bar.ticketMix.map((t) => h('tr', {}, h('td', {}, t.name), h('td', { class: 'num' }, t.qty), h('td', { class: 'num' }, eur(t.revenueCents))))))),
       d.bar.topProducts.length > 0 && h('div', {}, h('h2', {}, 'Bestseller'), h('div', { class: 'card table-wrap' }, h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', { class: 'num' }, 'Stück'), h('th', { class: 'num' }, 'Umsatz')), d.bar.topProducts.slice(0, 8).map((p) => h('tr', {}, h('td', {}, p.name), h('td', { class: 'num' }, p.qty), h('td', { class: 'num' }, eur(p.revenueCents))))))),
       h('h2', {}, 'Monat in Zahlen'), h('div', { class: 'card table-wrap' }, h('table', {},
-        h('tr', {}, h('td', {}, 'Kurseinnahmen'), h('td', { class: 'num' }, eur(d.totals.incomeCents - d.bar.revenueCents - d.bar.ticketRevenueCents))),
+        h('tr', {}, h('td', {}, 'Kurseinnahmen'), h('td', { class: 'num' }, eur(d.totals.incomeCents - d.bar.revenueCents - d.bar.ticketRevenueCents - (d.bar.platformRevenueCents || 0)))),
+        d.bar.platformRevenueCents > 0 && h('tr', {}, h('td', {}, 'Pass-Plattformen (erwartet)'), h('td', { class: 'num' }, eur(d.bar.platformRevenueCents))),
         h('tr', {}, h('td', {}, 'Eintritt & Workshops'), h('td', { class: 'num' }, eur(d.bar.ticketRevenueCents))),
         h('tr', {}, h('td', {}, 'Getränke'), h('td', { class: 'num' }, eur(d.bar.revenueCents))),
         h('tr', {}, h('td', {}, 'Personalkosten'), h('td', { class: 'num' }, `− ${eur(d.personnel.totalCents)}`)),
@@ -738,7 +744,7 @@
       h('h2', {}, 'Monate vergleichen'), compare,
       h('h2', {}, 'Alle Monate · Spalte antippen zum Sortieren'),
       h('div', { class: 'card table-wrap' }, h('table', {},
-        h('tr', {}, h('th', {}, 'Monat'), h('th', { class: 'num' }, 'Abende'), h('th', { class: 'num' }, 'Gäste'), h('th', { class: 'num' }, 'Eintritt'), h('th', { class: 'num' }, 'Getränke'), h('th', { class: 'num' }, 'Kurse'), h('th', { class: 'num' }, 'Personal'), h('th', { class: 'num' }, 'Wareneinsatz'), h('th', { class: 'num' }, 'Fixkosten'), h('th', { class: 'num' }, 'Ergebnis')),
+        h('tr', {}, h('th', {}, 'Monat'), h('th', { class: 'num' }, 'Abende'), h('th', { class: 'num' }, 'Gäste'), h('th', { class: 'num' }, 'Eintritt & Pass'), h('th', { class: 'num' }, 'Getränke'), h('th', { class: 'num' }, 'Kurse'), h('th', { class: 'num' }, 'Personal'), h('th', { class: 'num' }, 'Wareneinsatz'), h('th', { class: 'num' }, 'Fixkosten'), h('th', { class: 'num' }, 'Ergebnis')),
         y.months.map((m, i) => h('tr', { class: 'clickable', onclick: openMonth(m.month) }, h('td', { 'data-sort': m.month }, `${MN[i]} ${year}`), cell(m.nights), cell(m.guests), cell(eur(m.ticketCents)), cell(eur(m.drinksCents)), cell(eur(m.courseCents)), cell(eur(m.personnelCents)), cell(eur(m.cogsCents || 0)), cell(eur(m.fixedCents)), cell(eur(m.profitCents), m.profitCents < 0 ? 'badtxt' : ''))),
         h('tr', { class: 'total-row' }, h('td', {}, 'Summe'), cell(y.totals.nights), cell(y.totals.guests), cell(eur(y.totals.ticketCents)), cell(eur(y.totals.drinksCents)), cell(eur(y.totals.courseCents)), cell(eur(y.totals.personnelCents)), cell(eur(y.totals.cogsCents || 0)), cell(eur(y.totals.fixedCents)), cell(eur(y.totals.profitCents))))));
   }
@@ -887,9 +893,10 @@
           h('td', { class: 'num' }, h('button', { type: 'button', class: `link${p.costCents == null ? ' missing' : ''}`, onclick: editMoney(p, 'costCents', 'Einkaufspreis netto') }, p.costCents == null ? 'fehlt' : eur(p.costCents))),
           h('td', { class: 'num' }, m ? eur(m.eur) : '–'), h('td', { class: `num ${m ? (m.pct >= 80 ? 'oktxt' : m.pct >= 70 ? 'warntxt' : 'badtxt') : 'muted'}` }, m ? `${m.pct} %` : '–'),
           h('td', { class: 'row' }, h('button', { type: 'button', class: 'link', onclick: editMoney(p, 'priceCents', 'Neuer Preis') }, 'Preis'), h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))); })) : h('p', { class: 'muted' }, 'Noch keine Getränke.')),
-      h('h2', {}, 'Eintritt, Workshops, Kursgebühren'),
-      h('div', { class: 'card table-wrap' }, other.length ? h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', { class: 'num' }, 'Material pro Person'), h('th', {}, '')),
+      h('h2', {}, 'Eintritt, Pass-Check-ins, Workshops, Kursgebühren'),
+      h('div', { class: 'card table-wrap' }, other.length ? h('table', {}, h('tr', {}, h('th', {}, 'Artikel'), h('th', {}, 'Kategorie'), h('th', { class: 'num' }, 'Preis'), h('th', { class: 'num' }, 'Auszahlung je Check-in'), h('th', { class: 'num' }, 'Material pro Person'), h('th', {}, '')),
         other.map((p) => h('tr', { class: p.active ? '' : 'muted' }, h('td', { class: 'wrap' }, p.name, p.source && h('div', { class: 'small muted src' }, p.source)), h('td', {}, CAT[p.category]), h('td', { class: 'num' }, eur(p.priceCents)),
+          h('td', { class: 'num' }, p.category === 'checkin' ? h('button', { type: 'button', class: `link${p.payoutCents == null ? ' missing' : ''}`, onclick: editMoney(p, 'payoutCents', `Auszahlung pro Check-in (${p.platform || p.name})`) }, p.payoutCents == null ? 'fehlt' : eur(p.payoutCents)) : h('span', { class: 'muted' }, '–')),
           h('td', { class: 'num' }, h('button', { type: 'button', class: 'link', onclick: editMoney(p, 'costCents', 'Materialkosten pro Person (z. B. Eventband)') }, p.costCents == null ? '–' : eur(p.costCents))),
           h('td', { class: 'row' }, h('button', { type: 'button', class: 'link', onclick: editMoney(p, 'priceCents', 'Neuer Preis') }, 'Preis'), h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/products/${p.id}`, { active: !p.active }); route('artikel'); }) }, p.active ? 'ausblenden' : 'einblenden'))))) : h('p', { class: 'muted' }, 'Noch nichts angelegt.')),
       h('p', { class: 'muted small' }, 'Farbfeld antippen, um die Button-Farbe an der Kasse zu ändern. Marge = Verkaufspreis − Einkaufspreis netto (ohne Pfand). Grün ab 80 %, gelb ab 70 %. „Material pro Person" bei Eintritt = z. B. Eventband (0,06 €), wird pro verkauftem Ticket als Kosten gerechnet. Eintritt und Workshops zählen jeden Gast, haben aber kein Inventar. Für Workshop-Teilnehmer, die zum Übungsabend bleiben, ein Ticket mit 0 € anlegen. Ausgeblendete Artikel erscheinen nicht mehr an der Kasse; Preisänderungen gelten ab dem nächsten Verkauf.'));
