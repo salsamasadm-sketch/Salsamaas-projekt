@@ -728,6 +728,28 @@
   .story-year .yr-sub{color:rgba(255,255,255,.75);margin-top:18px;max-width:24ch;font-size:1rem;}
   .milestone-row div:first-child{display:none;}
   @media (max-width:860px){.story-grid .story-year{aspect-ratio:auto;min-height:260px;}}
+  /* ===== Runde 4: Design-System (siehe website/DESIGN.md) ===== */
+  :root{
+    --oro-text:#9A5B00;            /* Gold als Schrift auf Hell: 5,4:1 */
+    --accent-deep:var(--oro-text); /* Rolle: Akzent-Text auf hellem Grund */
+    --fs-xs:.82rem; --fs-sm:.9rem; --fs-base:1rem; --fs-lg:1.25rem; --fs-xl:1.6rem;
+    --fs-2xl:clamp(2rem,4vw,3.2rem); --fs-display:clamp(3.6rem,13vw,10.5rem);
+    --sp-1:8px; --sp-2:16px; --sp-3:24px; --sp-4:32px; --sp-6:48px; --sp-8:64px; --sp-12:96px;
+    --r-sm:12px; --r-md:16px; --r-lg:26px;
+    --shadow-rest:var(--sh-2); --shadow-lift:var(--sh-3);
+    --sh-1:var(--sh-2);
+  }
+  body.theme-pasing{--accent-deep:#5C1A28;}
+  .btn{border-radius:var(--r-sm);}
+  .btn-primary:hover{background:color-mix(in srgb,var(--accent) 86%,#000);}
+  .loc-card[data-loc="maxvorstadt"] .loc-card-cta,.loc-card[data-loc="maxvorstadt"] .loc-card-tag{color:var(--oro-text);}
+  .info-box-tag,.price-card .info-box-tag,.contact-info div.item b,.location-body .addr,.info-box-loc-label{color:var(--accent-deep);}
+  footer.site h5{color:var(--accent-on-dark);}
+  section.block{padding:var(--sp-12) 0;}
+  .section-head{margin-bottom:var(--sp-6);}
+  .section-head h2{font-size:var(--fs-2xl);}
+  .section-head p,.hero p.lead{font-size:var(--fs-base);}
+  .hero p.lead{font-size:var(--fs-lg);line-height:1.55;}
 </style>
 </head>
 <body>
