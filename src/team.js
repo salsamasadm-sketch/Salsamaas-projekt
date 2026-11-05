@@ -38,12 +38,12 @@ const pname = z.string().trim().min(1).max(40).refine((s) => !/[<>\u0000-\u001F]
 const { CATALOG, TICKETS, COURSE_FEES, WRISTBAND_CENTS } = require('./catalog');
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Farbe als #RRGGBB');
 const passFields = { platform: z.string().trim().min(1).max(30).refine((s) => !/[<>\u0000-\u001F]/.test(s)).optional(), checkinFor: z.enum(['abend', 'workshop']).optional(), payoutCents: cents(100_000).nullable().optional() };
-const productCreate = z.object({ ...passFields, name: pname, color: hexColor.nullable().optional(), priceCents: cents(100_000), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES), active: z.boolean().default(true), sort: z.number().int().min(0).max(999).default(100) }).strict();
-const productPatch = z.object({ ...passFields, name: pname.optional(), color: hexColor.nullable().optional(), priceCents: cents(100_000).optional(), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
+const productCreate = z.object({ ...passFields, privateLesson: z.boolean().optional(), name: pname, color: hexColor.nullable().optional(), priceCents: cents(100_000), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES), active: z.boolean().default(true), sort: z.number().int().min(0).max(999).default(100) }).strict();
+const productPatch = z.object({ ...passFields, privateLesson: z.boolean().optional(), name: pname.optional(), color: hexColor.nullable().optional(), priceCents: cents(100_000).optional(), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
 const stock = z.record(S.id, z.number().int().min(0).max(10_000)).refine((o) => Object.keys(o).length <= 300, 'zu viele Artikel');
 const sessionOpen = z.object({ location: LOC, station: z.enum(STATIONS).default('theke'), cashStartCents: cents(10_000_000), stockStart: stock.default({}) }).strict();
-const saleSchema = z.object({ note: z.string().trim().min(1).max(60).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen').optional(), payment: z.enum(['bar', 'karte', 'gratis']), items: z.array(z.object({ productId: S.id, qty: z.number().int().min(1).max(50) }).strict()).min(1).max(30) }).strict();
+const saleSchema = z.object({ privateLesson: z.object({ leader: ref.nullable().optional(), follower: ref.nullable().optional() }).strict().optional(), note: z.string().trim().min(1).max(60).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen').optional(), payment: z.enum(['bar', 'karte', 'gratis']), items: z.array(z.object({ productId: S.id, qty: z.number().int().min(1).max(50) }).strict()).min(1).max(30) }).strict();
 const helperIn = z.object({ name: z.string().trim().min(2).max(40).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen'), start: iso, end: iso, rateCents: cents(10_000), payout: z.enum(['bar', 'ueberweisung']) }).strict()
   .refine((h) => new Date(h.end) > new Date(h.start) && new Date(h.end) - new Date(h.start) <= 16 * 3_600_000, 'Aushilfe: Ende muss nach Beginn liegen (max. 16 Std.)');
 const sessionClose = z.object({ helpers: z.array(helperIn).max(10).default([]), cashEndCents: cents(10_000_000), cashOutCents: cents(10_000_000).default(0), stockEnd: stock.default({}), restock: stock.default({}), guests: z.number().int().min(0).max(3000).optional(), note: note.optional() }).strict();
@@ -55,6 +55,7 @@ const settingsSchema = z.object({
   targets: z.object({ utilizationPct: z.number().min(0).max(100), openPaymentsPct: z.number().min(0).max(100), barPerGuestCents: cents(100_000), barPersonnelPct: z.number().min(0).max(200), costRatioPct: z.number().min(0).max(200).default(30) }).strict(),
   fixedCostsCents: z.object({ maxvorstadt: cents(100_000_000), pasing: cents(100_000_000) }).strict(),
   minijobLimitCents: cents(1_000_000),
+  privateLessonPay: z.object({ leaderCents: cents(100_000), followerCents: cents(100_000) }).strict().optional(),
 }).strict();
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Uhrzeit HH:MM');
 const short = (max) => z.string().trim().min(1).max(max).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen');
@@ -207,6 +208,11 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     return ses;
   };
 
+  // Namen des Teams fuer die Auswahl "wer hat unterrichtet" (ohne Loehne)
+  r.get('/staff/names', wrap(async (req, res) => {
+    res.json((await store.listDocs('staff')).filter((p) => p.active !== false).map((p) => p.ref).sort((a, b) => a.localeCompare(b)));
+  }));
+
   r.get('/products', wrap(async (req, res) => {
     const list = (await store.listDocs('products')).filter((p) => req.session.role === 'owner' || p.active !== false);
     res.json(list.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)));
@@ -254,6 +260,19 @@ function createTeamRouter({ store, keys, sessions, logger }) {
       items.push({ productId: p.id, qty: it.qty, priceCents: p.priceCents });
     }
     const sale = { id: crypto.randomUUID(), sessionId: ses.id, at: new Date().toISOString(), by: by(req), payment: d.payment, items, ...(d.note && { note: d.note }) };
+    // Privatstunde durch jemanden aus dem Team: Verguetung Leader/Follower als Festbetrag-Einsatz verbuchen
+    const privQty = items.filter((i) => products.get(i.productId)?.privateLesson || /privatstunde/i.test(products.get(i.productId)?.name || '')).reduce((a, i) => a + i.qty, 0);
+    if (privQty && d.privateLesson) {
+      const pay = mergeSettings(await store.getDoc('settings', 'main')).privateLessonPay;
+      for (const [role, who] of [['Leader', d.privateLesson.leader], ['Follower', d.privateLesson.follower]]) {
+        if (!who) continue;
+        const p = await store.getDoc('staff', who.toLowerCase());
+        if (!p) return res.status(400).json({ error: 'validation_failed', details: [{ path: 'privateLesson', message: `${who} nicht gefunden` }] });
+        const at = sale.at;
+        await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: p.ref, kind: 'privat', role, location: ses.location, start: at, end: at, rateCents: 0, fixedCents: privQty * (role === 'Leader' ? pay.leaderCents : pay.followerCents), saleId: sale.id, createdBy: by(req) });
+      }
+      sale.privateLesson = { leader: d.privateLesson.leader || null, follower: d.privateLesson.follower || null };
+    }
     await store.putDoc('sales', sale);
     res.status(201).json({ id: sale.id, totalCents: d.payment === 'gratis' ? 0 : items.reduce((a, i) => a + i.qty * i.priceCents, 0) });
   }));
@@ -268,6 +287,8 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const sale = await store.getDoc('sales', req.params.saleId);
     if (!sale || sale.sessionId !== ses.id || sale.voided) return res.status(404).json({ error: 'not_found' });
     await store.putDoc('sales', { ...sale, voided: true, voidedBy: by(req), voidedAt: new Date().toISOString() }); log(req, 'sale_voided');
+    // Storno: Verguetung einer Privatstunde wieder entfernen
+    for (const sh of (await store.listDocs('shifts')).filter((x) => x.saleId === sale.id)) await store.removeDoc('shifts', sh.id);
     res.sendStatus(204);
   }));
 
@@ -433,7 +454,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     let n = 0;
     for (const [i, c] of [...TICKETS, ...COURSE_FEES, ...CATALOG].entries()) {
       if (existing.has(c.name.toLowerCase())) continue;
-      await store.putDoc('products', { id: crypto.randomUUID(), name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, ...(c.source && { source: c.source }), ...(c.platform && { platform: c.platform, checkinFor: c.checkinFor, payoutCents: c.payoutCents }), category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date().toISOString() }); n++;
+      await store.putDoc('products', { id: crypto.randomUUID(), name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, ...(c.source && { source: c.source }), ...(c.platform && { platform: c.platform, checkinFor: c.checkinFor, payoutCents: c.payoutCents }), ...(c.privateLesson && { privateLesson: true }), category: c.category, active: true, sort: 100 + i * 10, createdAt: new Date().toISOString() }); n++;
     }
     log(req, 'catalog_imported'); res.json({ created: n });
   }));

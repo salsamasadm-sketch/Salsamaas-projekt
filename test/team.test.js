@@ -274,7 +274,7 @@ test('Getraenkekarte, Einkaufspreise, Wareneinsatz und Einkaeufe', async () => {
   const s = await start();
   const { chef } = await setup(s);
   const imp = (await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body;
-  assert.equal(imp.created, 38); // 14 Getränke + 13 Tickets/Check-ins + 12 Kursgebühren, 'Eintritt Übungsabend' gab es schon (keine Doppelung)
+  assert.equal(imp.created, 40); // 14 Getränke + 13 Tickets/Check-ins + 14 Kursgebühren, 'Eintritt Übungsabend' gab es schon (keine Doppelung)
   assert.equal((await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body.created, 0); // keine Doppelungen
   const products = (await s.call('GET', '/app/api/products', { token: chef })).body;
   const helles = products.find((p) => p.name === 'Helles');
@@ -332,4 +332,26 @@ test('Pass-Check-ins: Check-in = bezahlt, erwartete Auszahlung zaehlt zum Umsatz
   assert.equal(d.bar.platformRevenueCents, 5100);
   assert.equal(d.totals.incomeCents, 500 + 5100);
   assert.deepEqual(d.bar.platforms.map((p) => [p.platform, p.checkins]), [['Wellpass', 2], ['Urban Sports Club', 1], ['Wellhub', 1]]);
+});
+
+test('Privatstunde durch das Team: Leader 30 €, Follower 15 € als Verguetung, Storno entfernt sie', async () => {
+  const s = await start();
+  const { chef, lena } = await setup(s);
+  await s.call('POST', '/app/api/staff', { token: chef, body: { ref: 'diego', pin: '771122', hourlyRateCents: 2500, employment: 'rechnung' } });
+  await s.call('POST', '/app/api/products/import-catalog', { token: chef });
+  const priv = (await s.call('GET', '/app/api/products', { token: chef })).body.find((p) => p.name === 'Privatstunde');
+  assert.equal(priv.privateLesson, true);
+  await s.call('POST', '/app/api/shifts/start', { token: lena, body: { kind: 'bar', location: 'pasing' } });
+  const ses = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', cashStartCents: 0, stockStart: {} } })).body;
+  const sale = (await s.call('POST', `/app/api/bar/${ses.id}/sales`, { token: lena, body: { payment: 'karte', items: [{ productId: priv.id, qty: 2 }], privateLesson: { leader: 'diego', follower: 'lena' } } })).body;
+  const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
+  const diego = d.personnel.byStaff.find((x) => x.ref === 'diego');
+  assert.equal(diego.earnedCents, 6000);      // 2 Privatstunden x 30 €
+  const inv = (await s.call('GET', `/app/api/invoices?month=${d.month}`, { token: chef })).body.find((i) => i.ref === 'diego');
+  assert.equal(inv.amountCents, 6000);
+  const shifts = (await s.call('GET', '/app/api/shifts', { token: chef })).body.filter((x) => x.kind === 'privat');
+  assert.deepEqual(shifts.map((x) => [x.staffRef, x.role, x.fixedCents]).sort(), [['diego', 'Leader', 6000], ['lena', 'Follower', 3000]]);
+  await s.call('DELETE', `/app/api/bar/${ses.id}/sales/${sale.id}`, { token: lena });
+  assert.equal((await s.call('GET', '/app/api/shifts', { token: chef })).body.filter((x) => x.kind === 'privat').length, 0);
+  s.close();
 });

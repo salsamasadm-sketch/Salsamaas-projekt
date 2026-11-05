@@ -9,7 +9,8 @@ const { computeInvoices } = require('./plan');
 const DEFAULT_SETTINGS = {
   targets: { utilizationPct: 75, openPaymentsPct: 5, barPerGuestCents: 600, barPersonnelPct: 30, costRatioPct: 30 },
   fixedCostsCents: { maxvorstadt: 0, pasing: 0 },
-  minijobLimitCents: 60300, // Minijob-Grenze 2026 (bei Gesetzesaenderung in den Einstellungen anpassen)
+  minijobLimitCents: 60300,
+  privateLessonPay: { leaderCents: 3000, followerCents: 1500 }, // Privatstunde durch Team: Leader / Follower // Minijob-Grenze 2026 (bei Gesetzesaenderung in den Einstellungen anpassen)
 };
 const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
 const LOC_LABEL = { maxvorstadt: 'Maxvorstadt', pasing: 'Pasing' };
@@ -27,6 +28,7 @@ function mergeSettings(s) {
     targets: { ...DEFAULT_SETTINGS.targets, ...(s.targets || {}) },
     fixedCostsCents: { ...DEFAULT_SETTINGS.fixedCostsCents, ...(s.fixedCostsCents || {}) },
     minijobLimitCents: s.minijobLimitCents ?? DEFAULT_SETTINGS.minijobLimitCents,
+    privateLessonPay: { ...DEFAULT_SETTINGS.privateLessonPay, ...(s.privateLessonPay || {}) },
   };
 }
 
@@ -36,7 +38,7 @@ function shiftHours(sh, now) {
   if (sh.end) return billedHours(sh.start, sh.end);
   return Math.max(0, (now - new Date(sh.start)) / 3_600_000);
 }
-const shiftCost = (sh, now) => Math.round(shiftHours(sh, now) * (sh.rateCents || 0));
+const shiftCost = (sh, now) => (sh.fixedCents != null ? sh.fixedCents : Math.round(shiftHours(sh, now) * (sh.rateCents || 0)));
 
 /** Ampel: ok = Ziel erreicht, warn = bis 15 % daneben, bad = deutlich daneben. */
 function status(value, target, dir) {

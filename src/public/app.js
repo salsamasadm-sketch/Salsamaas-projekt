@@ -4,6 +4,7 @@
   const $ = (s) => document.querySelector(s);
   const LOC = { maxvorstadt: 'Maxvorstadt', pasing: 'Pasing' };
   const KIND = { bar: 'Bar / Theke', empfang: 'Empfang / Tür', kombi: 'Tür + Theke (alles)', kurs: 'Unterricht', sonstiges: 'Sonstiges' };
+  const SHIFT_KIND = { ...KIND, privat: 'Privatstunde' };
   const TICKET = ['eintritt', 'checkin', 'workshop', 'kursgebuehr']; // ohne Inventar
   const FEE = 'kursgebuehr';
   // Getraenkefarben: eigene Farbe des Artikels, sonst nach Namen (bekannte Marken), sonst nach Kategorie
@@ -211,7 +212,7 @@
     root.append(h('div', { class: 'card' },
       h('div', { class: 'row spread' }, h('b', {}, 'Dieser Monat'), h('span', {}, `${me.monthHours.toLocaleString('de-DE')} Std.`)),
       h('div', { class: 'table-wrap' }, h('table', {}, h('tr', {}, h('th', {}, 'Wann'), h('th', {}, 'Was'), h('th', { class: 'num' }, 'Std.')),
-        me.recent.map((s) => h('tr', {}, h('td', {}, `${dateTime(s.start)}–${s.end ? time(s.end) : 'läuft'}`), h('td', {}, `${KIND[s.kind]}, ${LOC[s.location]}`), h('td', { class: 'num' }, hours(s.start, s.end).toFixed(1).replace('.', ','))))))));
+        me.recent.map((s) => h('tr', {}, h('td', {}, `${dateTime(s.start)}–${s.end ? time(s.end) : 'läuft'}`), h('td', {}, `${SHIFT_KIND[s.kind] || s.kind}${s.role ? ` (${s.role})` : ''}, ${LOC[s.location]}`), h('td', { class: 'num' }, hours(s.start, s.end).toFixed(1).replace('.', ','))))))));
     return root;
   }
 
@@ -278,6 +279,9 @@
     const priceOf = new Map(products.map((p) => [p.id, p]));
     const prodButtons = new Map();
     let feeRef = '';
+    let privLeader = '', privFollower = '';
+    const staffNames = await api('GET', '/staff/names').catch(() => []);
+    const isPrivate = (id) => priceOf.get(id).privateLesson || /privatstunde/i.test(priceOf.get(id).name);
     let lastTotal = 0;
 
     const renderHead = () => head.replaceChildren(
@@ -295,14 +299,19 @@
       const pay = (p) => run(async () => {
         if (!cart.size) return;
         const note = [...cart.keys()].some((id) => priceOf.get(id).category === FEE) ? feeRef.trim() : '';
-        await api('POST', `/bar/${ses.id}/sales`, { payment: p, items: [...cart.entries()].map(([productId, qty]) => ({ productId, qty })), ...(note && { note }) });
+        const priv = [...cart.keys()].some(isPrivate) && (privLeader || privFollower) ? { privateLesson: { leader: privLeader || null, follower: privFollower || null } } : {};
+        await api('POST', `/bar/${ses.id}/sales`, { payment: p, items: [...cart.entries()].map(([productId, qty]) => ({ productId, qty })), ...(note && { note }), ...priv });
         toast(p === 'gratis' ? 'Gratis gebucht' : `${eur(total)} ${PAY[p]} gebucht`);
-        cart.clear(); feeRef = ''; await refresh();
+        cart.clear(); feeRef = ''; privLeader = ''; privFollower = ''; await refresh();
       });
       cartBox.replaceChildren(
         h('div', { class: 'row spread receipt-head' }, h('span', { class: 'eyebrow' }, 'Bon'), h('span', { class: 'total' }, eur(total))),
         cart.size ? h('ul', { class: 'cartlist' }, [...cart.entries()].map(([id, q]) => h('li', {}, h('span', {}, `${q}× ${priceOf.get(id).name}`), h('span', { class: 'row' }, eur(q * priceOf.get(id).priceCents), h('button', { type: 'button', class: 'ghost', onclick: () => { q > 1 ? cart.set(id, q - 1) : cart.delete(id); renderCart(); } }, '−'))))) : h('p', { class: 'muted small' }, 'Getränk antippen, dann Zahlart wählen.'),
         [...cart.keys()].some((id) => priceOf.get(id).category === FEE) ? h('label', { class: 'fee-ref' }, 'Kursgebühr für wen? (Vorname oder Bsport-ID, optional)', h('input', { id: 'fee-ref', maxlength: 60, autocomplete: 'off', placeholder: 'z. B. Anna K. oder bs-1234', value: feeRef, oninput: (e) => { feeRef = e.target.value; } })) : '',
+        [...cart.keys()].some(isPrivate) ? h('div', { class: 'priv-who' }, h('span', { class: 'small' }, h('b', {}, 'Privatstunde – wer unterrichtet? '), 'Leader 30 €, Follower 15 € werden automatisch verbucht.'),
+          h('div', { class: 'grid2' },
+            field('Leader', select({ '': '— selbst (keine Vergütung) —', ...Object.fromEntries(staffNames.map((n) => [n, n])) }, privLeader, { id: 'priv-leader', onchange: (e) => { privLeader = e.target.value; } })),
+            field('Follower', select({ '': '— kein Follower —', ...Object.fromEntries(staffNames.map((n) => [n, n])) }, privFollower, { id: 'priv-follower', onchange: (e) => { privFollower = e.target.value; } })))) : '',
         h('div', { class: 'grid3' },
           h('button', { class: 'btn', type: 'button', disabled: !cart.size, onclick: pay('bar') }, 'Bar'),
           h('button', { class: 'btn', type: 'button', disabled: !cart.size, onclick: pay('karte') }, 'Karte'),
@@ -848,7 +857,7 @@
             h('td', {}, x.payout === 'ueberweisung' && h('button', { type: 'button', class: 'link', onclick: run(async () => { await api('PATCH', `/shifts/${x.id}`, { paid: !x.paid }); toast(x.paid ? 'Wieder offen' : 'Als überwiesen markiert'); route('personal'); }) }, x.paid ? 'zurücksetzen' : 'als überwiesen markieren'))))))),
       h('h2', {}, 'Schichten'),
       h('div', { class: 'card table-wrap' }, shifts.length ? h('table', {}, h('tr', {}, h('th', {}, 'Wer'), h('th', {}, 'Wann'), h('th', {}, 'Was'), h('th', { class: 'num' }, 'Std.'), h('th', { class: 'num' }, 'Kosten'), h('th', {}, '')),
-        shifts.map((s) => h('tr', {}, h('td', {}, s.helper ? `${s.staffRef} (Aushilfe)` : s.staffRef), h('td', {}, `${dateTime(s.start)}–${s.end ? time(s.end) : 'läuft'}`), h('td', {}, `${KIND[s.kind]}, ${LOC[s.location]}`), h('td', { class: 'num' }, hours(s.start, s.end).toFixed(1).replace('.', ',')), h('td', { class: 'num' }, eur(Math.round(hours(s.start, s.end) * s.rateCents))),
+        shifts.map((s) => h('tr', {}, h('td', {}, s.helper ? `${s.staffRef} (Aushilfe)` : s.staffRef), h('td', {}, `${dateTime(s.start)}–${s.end ? time(s.end) : 'läuft'}`), h('td', {}, `${SHIFT_KIND[s.kind] || s.kind}${s.role ? ` (${s.role})` : ''}, ${LOC[s.location]}`), h('td', { class: 'num' }, hours(s.start, s.end).toFixed(1).replace('.', ',')), h('td', { class: 'num' }, eur(s.fixedCents != null ? s.fixedCents : Math.round(hours(s.start, s.end) * s.rateCents))),
           h('td', {}, h('button', { type: 'button', class: 'link', onclick: run(async () => { if (!await ask('Schicht löschen?')) return; await api('DELETE', `/shifts/${s.id}`); route('personal'); }) }, 'löschen'))))) : h('p', { class: 'muted' }, 'Keine Schichten in diesem Monat.')),
       staff.length > 0 && h('details', { class: 'card' }, h('summary', {}, '+ Schicht nachtragen / korrigieren'),
         h('form', { onsubmit: run(async () => { await api('POST', '/shifts', { staffRef: ms.staffRef.value, kind: ms.kind.value, location: ms.location.value, start: new Date(ms.start.value).toISOString(), end: new Date(ms.end.value).toISOString() }); toast('Gespeichert'); route('personal'); }) },
@@ -911,17 +920,19 @@
       perGuest: h('input', { inputmode: 'decimal', value: fromCents(t.barPerGuestCents) }), pers: h('input', { type: 'number', min: 0, max: 200, value: t.barPersonnelPct }),
       fixM: h('input', { inputmode: 'decimal', value: fromCents(s.fixedCostsCents.maxvorstadt) }), fixP: h('input', { inputmode: 'decimal', value: fromCents(s.fixedCostsCents.pasing) }),
       mini: h('input', { inputmode: 'decimal', value: fromCents(s.minijobLimitCents) }),
+      privL: h('input', { inputmode: 'decimal', value: fromCents(s.privateLessonPay?.leaderCents ?? 3000) }), privF: h('input', { inputmode: 'decimal', value: fromCents(s.privateLessonPay?.followerCents ?? 1500) }),
     };
     return h('form', { onsubmit: run(async () => {
-      const c = [f.perGuest, f.fixM, f.fixP, f.mini].map((i) => toCents(i.value));
+      const c = [f.perGuest, f.fixM, f.fixP, f.mini, f.privL, f.privF].map((i) => toCents(i.value));
       if (c.some((x) => x == null)) throw new Error('Beträge prüfen');
-      await api('PUT', '/settings', { targets: { utilizationPct: Number(f.util.value), openPaymentsPct: Number(f.open.value), barPerGuestCents: c[0], barPersonnelPct: Number(f.pers.value), costRatioPct: Number(f.cogs.value) }, fixedCostsCents: { maxvorstadt: c[1], pasing: c[2] }, minijobLimitCents: c[3] });
+      await api('PUT', '/settings', { targets: { utilizationPct: Number(f.util.value), openPaymentsPct: Number(f.open.value), barPerGuestCents: c[0], barPersonnelPct: Number(f.pers.value), costRatioPct: Number(f.cogs.value) }, fixedCostsCents: { maxvorstadt: c[1], pasing: c[2] }, minijobLimitCents: c[3], privateLessonPay: { leaderCents: c[4], followerCents: c[5] } });
       toast('Gespeichert');
     }) },
     h('h1', {}, 'Ziele & Kosten'),
     h('div', { class: 'card' }, h('h2', {}, 'Ziele'), h('div', { class: 'grid2' }, field('Kurs-Auslastung mind. %', f.util), field('Offene Zahlungen max. %', f.open), field('Bar-Umsatz pro Gast mind. €', f.perGuest), field('Personalquote Bar max. %', f.pers), field('Wareneinsatz Getränke max. %', f.cogs))),
     h('div', { class: 'card' }, h('h2', {}, 'Fixkosten pro Monat'), h('p', { class: 'muted small' }, 'Miete, Nebenkosten, Versicherungen, GEMA, Software usw. zusammengerechnet.'), h('div', { class: 'grid2' }, field('Maxvorstadt €', f.fixM), field('Pasing €', f.fixP))),
     h('div', { class: 'card' }, h('h2', {}, 'Minijob'), field('Monatsgrenze €', f.mini), h('p', { class: 'muted small' }, 'Die App warnt ab 85 % der Grenze.')),
+    h('div', { class: 'card' }, h('h2', {}, 'Privatstunde durch das Team'), h('div', { class: 'grid2' }, field('Leader € pro Stunde', f.privL), field('Follower € pro Stunde', f.privF)), h('p', { class: 'muted small' }, 'Wird beim Verkauf einer Privatstunde automatisch als Vergütung verbucht, wenn an der Kasse ein Leader/Follower aus dem Team gewählt wird.')),
     h('button', { class: 'btn block', type: 'submit' }, 'Speichern'));
   }
 

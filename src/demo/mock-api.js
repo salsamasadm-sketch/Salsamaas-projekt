@@ -8,7 +8,7 @@
   const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = window.__cockpit.dashboard;
   const { computeSettlement, buildHelpers, helperShift } = window.__cockpit.bar;
   const { computeWeek, computeInvoices, mondayOf, addDays } = window.__cockpit.plan;
-  const KEY = 'cockpit.demo.db.v16';
+  const KEY = 'cockpit.demo.db.v17';
   const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
   let db;
   try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
@@ -79,6 +79,7 @@
       const s = { id: uid(), staffRef: staff.ref, kind: body.kind, location: body.location, start: a.toISOString(), end: b.toISOString(), rateCents: staff.hourlyRateCents };
       db.shifts[s.id] = s; save(); return json(201, s);
     }
+    if (method === 'GET' && path === '/staff/names') return json(200, list('staff').filter((p) => p.active !== false).map((p) => p.ref).sort());
     if (method === 'GET' && path === '/products') return json(200, list('products').filter((p) => owner || p.active !== false).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)));
     if (method === 'GET' && path === '/bar/current') {
       const sc = scope();
@@ -105,12 +106,23 @@
       if (body.items.some((it) => !db.products[it.productId] || (stOf(ses) !== 'kombi' && isTicket(it.productId) !== (stOf(ses) === 'tuer')))) return err(400, 'wrong_station');
       const items = body.items.map((it) => ({ productId: it.productId, qty: it.qty, priceCents: db.products[it.productId].priceCents }));
       const sale = { id: uid(), sessionId: ses.id, at: new Date().toISOString(), by, payment: body.payment, items, ...(body.note && { note: String(body.note).slice(0, 60) }) };
+      const privQty = items.filter((i) => db.products[i.productId]?.privateLesson || /privatstunde/i.test(db.products[i.productId]?.name || '')).reduce((a, i) => a + i.qty, 0);
+      if (privQty && body.privateLesson) {
+        const pay = mergeSettings(db.settings.main).privateLessonPay;
+        for (const [role, who] of [['Leader', body.privateLesson.leader], ['Follower', body.privateLesson.follower]]) {
+          if (!who || !db.staff[who.toLowerCase()]) continue;
+          const id = uid(); db.shifts[id] = { id, staffRef: db.staff[who.toLowerCase()].ref, kind: 'privat', role, location: ses.location, start: sale.at, end: sale.at, rateCents: 0, fixedCents: privQty * (role === 'Leader' ? pay.leaderCents : pay.followerCents), saleId: sale.id };
+        }
+        sale.privateLesson = body.privateLesson;
+      }
       db.sales[sale.id] = sale; save(); return json(201, { id: sale.id });
     }
     if (method === 'DELETE' && (m = path.match(/^\/bar\/([^/]+)\/sales\/([^/]+)$/))) {
       const sale = db.sales[m[2]]; if (!sale || sale.voided) return err(404, 'not_found');
       if (!inScope(scope(), db.barsessions[sale.sessionId] || {})) return err(403, 'wrong_station');
-      Object.assign(sale, { voided: true, voidedBy: by, voidedAt: new Date().toISOString() }); save(); return json(204);
+      Object.assign(sale, { voided: true, voidedBy: by, voidedAt: new Date().toISOString() });
+      for (const sh of list('shifts').filter((x) => x.saleId === sale.id)) delete db.shifts[sh.id];
+      save(); return json(204);
     }
     if (method === 'POST' && (m = path.match(/^\/bar\/([^/]+)\/close$/))) {
       const ses = db.barsessions[m[1]]; if (!ses) return err(404, 'not_found');
@@ -162,7 +174,7 @@
     // Getraenkekarte + Einkaeufe
     if (method === 'POST' && path === '/products/import-catalog') {
       const have = new Set(list('products').map((p) => p.name.toLowerCase())); let n = 0;
-      for (const [i, c] of [...window.__cockpit.catalog.TICKETS, ...window.__cockpit.catalog.COURSE_FEES, ...window.__cockpit.catalog.CATALOG].entries()) { if (have.has(c.name.toLowerCase())) continue; const id = uid(); db.products[id] = { id, name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, source: c.source, platform: c.platform, checkinFor: c.checkinFor, payoutCents: c.payoutCents, category: c.category, active: true, sort: 100 + i * 10 }; n++; }
+      for (const [i, c] of [...window.__cockpit.catalog.TICKETS, ...window.__cockpit.catalog.COURSE_FEES, ...window.__cockpit.catalog.CATALOG].entries()) { if (have.has(c.name.toLowerCase())) continue; const id = uid(); db.products[id] = { id, name: c.name, priceCents: c.priceCents, costCents: c.costCents, color: c.color, source: c.source, platform: c.platform, checkinFor: c.checkinFor, payoutCents: c.payoutCents, privateLesson: c.privateLesson, category: c.category, active: true, sort: 100 + i * 10 }; n++; }
       save(); return json(200, { created: n });
     }
     if (method === 'GET' && path === '/purchases') return json(200, list('purchases').filter((p) => inR(p.date)).sort((a, b) => b.date.localeCompare(a.date)));

@@ -99,7 +99,7 @@ function computeWeek({ week, plan = [], staff = [], shifts = [], settings = {}, 
     const row = { who, employment, employmentLabel: EMPLOYMENT[employment], guest: !person, slots: list.length, hours: list.reduce((a, s) => a + s.hours, 0), costCents: list.reduce((a, s) => a + s.costCents, 0) };
     if (person && employment === 'minijob') {
       const month = to.slice(0, 7);
-      const earned = shifts.filter((x) => x.staffRef === person.ref && !x.helper && x.end && berlinDate(x.start).slice(0, 7) === month).reduce((a, x) => a + Math.round(billedHours(x.start, x.end) * (x.rateCents || 0)), 0);
+      const earned = shifts.filter((x) => x.staffRef === person.ref && !x.helper && x.end && berlinDate(x.start).slice(0, 7) === month).reduce((a, x) => a + (x.fixedCents != null ? x.fixedCents : Math.round(billedHours(x.start, x.end) * (x.rateCents || 0))), 0);
       const plannedOpen = plan.filter((s) => s.staffRef && s.staffRef.toLowerCase() === who.toLowerCase() && s.date.slice(0, 7) === month && s.date >= nowDate)
         .reduce((a, s) => a + slotCost(s, person).costCents, 0);
       row.minijob = { month, earnedCents: earned, plannedCents: plannedOpen, forecastCents: earned + plannedOpen, limitCents: limit, pct: Math.round(((earned + plannedOpen) / limit) * 100) };
@@ -138,7 +138,7 @@ function computeInvoices({ month, staff = [], shifts = [], invoices = [] }) {
   return staff.filter((p) => (p.employment || 'minijob') === 'rechnung').map((p) => {
     const mine = shifts.filter((x) => x.staffRef === p.ref && !x.helper && x.end && berlinDate(x.start).slice(0, 7) === month);
     const hours = mine.reduce((a, x) => a + billedHours(x.start, x.end), 0);
-    const amountCents = mine.reduce((a, x) => a + Math.round(billedHours(x.start, x.end) * (x.rateCents || 0)), 0);
+    const amountCents = mine.reduce((a, x) => a + (x.fixedCents != null ? x.fixedCents : Math.round(billedHours(x.start, x.end) * (x.rateCents || 0))), 0);
     const inv = invoices.find((i) => i.id === `${p.id}_${month}`);
     return { id: `${p.id}_${month}`, staffId: p.id, ref: p.ref, month, hours: Math.round(hours * 100) / 100, amountCents, status: inv?.status || 'offen', updatedAt: inv?.updatedAt || null };
   });

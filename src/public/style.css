@@ -489,3 +489,5 @@ td.wrap { white-space: normal; min-width: 180px; }
 .swatch::-webkit-color-swatch-wrapper { padding: 0; }
 .swatch::-webkit-color-swatch { border: 0; border-radius: 50%; }
 .swatch::-moz-color-swatch { border: 0; border-radius: 50%; }
+.priv-who { display: grid; gap: 8px; margin: 4px 0 12px; padding: 10px 12px; border: 1px dashed var(--rule-strong); border-radius: var(--r); font-family: var(--f-body); }
+.priv-who label { margin-bottom: 0; }
