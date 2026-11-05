@@ -27,8 +27,8 @@ Je Standort wird nur `--accent*` getauscht (`body.theme-pasing`). Kein Dark Mode
 
 ## Typografie
 
-- **Bricolage Grotesque** (variabel: Stärke 200–800, Breite 75–100 %) für Überschriften, Preise und Jahreszahlen, schmal und eng gesetzt.
-- **Manrope** (variabel) für Text, Navigation und Buttons.
+- **Bodoni Moda** (variabel, aufrecht und kursiv) für H1/H2, Preise, Jahreszahlen und Studio-Namen; kursiv für die Takt-Wörter im Hero (wie ein Tanzplakat).
+- **Geist** (variabel) für Text, Navigation, Buttons und kleine Überschriften (H3, Team-Namen).
 - Beide Schriften sind in der Datei eingebettet. Keine Aufrufe an Google-Server.
 
 | Token | Größe | Einsatz |
@@ -55,7 +55,9 @@ Satzschreibung, keine Versalien-Labels, keine einzeln hervorgehobenen Wörter in
 ## Komponenten
 
 - **Buttons:** Primär in Akzentfarbe, beim Hovern 14 % dunkler. Sekundär weiß mit Linie, beim Hovern Nachtviolett. Fokus mit 3px-Rahmen. Kein „→“ im Text.
-- **Navigation:** schwebende weiße Leiste, aktive Seite in Nachtviolett.
+- **Navigation:** ohne eigenen Balken direkt auf dem Dunkel, helles Logo; beim Scrollen dunkles Glas. Aktive Seite mit Akzent-Unterstrich.
+- **Seitenanfang:** jede Unterseite beginnt mit einem dunklen Intro-Band und ihrer H1.
+- **Handy-Leiste unten:** dunkel, „Anrufen“ und „Jetzt buchen“.
 - **Studio-Karte:** weiß, `--shadow-lift`, 6px-Farbkante (Gold oder Weinrot).
 - **Kursangebot:** zweispaltige Liste mit Trennlinien, keine Kachelwand.
 - **Hauptkarte:** dunkle Karte für das empfohlene Angebot.
