@@ -44,12 +44,24 @@ jobs:
           service_account: github-deploy@salsamas.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
       - name: Container bauen (Cloud Build, Frankfurt)
+        # --async: GitHub darf keine Build-Logs lesen (braeuchte Viewer-Rechte) -> Status abfragen statt Logs streamen
         run: |
-          gcloud builds submit . \
+          BUILD_ID=$(gcloud builds submit . \
             --project salsamas --region europe-west3 \
             --tag "europe-west3-docker.pkg.dev/salsamas/cloud-run-source-deploy/salsamas-cockpit:${{ github.sha }}" \
             --gcs-source-staging-dir "gs://run-sources-salsamas-europe-west3/github" \
-            --suppress-logs
+            --async --format="value(id)")
+          echo "Build: $BUILD_ID"
+          for i in $(seq 1 90); do
+            STATUS=$(gcloud builds describe "$BUILD_ID" --project salsamas --region europe-west3 --format="value(status)")
+            echo "Status: $STATUS"
+            case "$STATUS" in
+              SUCCESS) exit 0 ;;
+              FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED) exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Build dauert zu lange"; exit 1
       - name: Live stellen (Cloud Run, Frankfurt)
         run: |
           gcloud run deploy salsamas-cockpit \
