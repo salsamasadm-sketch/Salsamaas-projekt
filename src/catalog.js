@@ -10,6 +10,7 @@ const CATALOG = [
   // Softdrinks
   { name: 'Wasser', color: '#5aaee0', priceCents: 350, category: 'softdrinks', costCents: 43, source: 'Adelholzener Classic/Naturell 0,5 l' },
   { name: 'Coca-Cola', color: '#e41e2b', priceCents: 400, category: 'softdrinks', costCents: 52, source: 'Coca-Cola 0,33 l Dose' },
+  { name: 'Fanta', color: '#f7941d', priceCents: 400, category: 'softdrinks', costCents: 52, source: 'Fanta Orange 0,33 l Dose (METRO 23.10.: 0,52 €) – Preis wie Coca-Cola' },
   { name: 'Cola-Mix', color: '#b4561c', priceCents: 400, category: 'softdrinks', costCents: 52, source: 'Annahme: Coca-Cola/Fanta 0,33 l Dose (je 0,52 €)' },
   { name: 'Sprite', color: '#00a651', priceCents: 400, category: 'softdrinks', costCents: 58, source: 'Sprite Zero 0,33 l Dose, METRO-App: 0,58 € ab 24 Stück (0,52 € ab 48)' },
   { name: 'Apfelschorle', color: '#e0a526', priceCents: 400, category: 'softdrinks', costCents: 54, source: 'Adelholzener Apfelschorle 0,5 l' },
@@ -17,6 +18,7 @@ const CATALOG = [
   { name: 'Red Bull', color: '#1f3f8f', priceCents: 500, category: 'softdrinks', costCents: 125, source: 'Red Bull 0,25 l Dose' },
   // Alkohol
   { name: 'Helles', color: '#f2c230', priceCents: 450, category: 'bier', costCents: 71, source: 'Augustiner Lagerbier Hell 0,5 l' },
+  { name: 'Alkoholfreies Bier', color: '#e6cf72', priceCents: 450, category: 'bier', costCents: 71, source: 'Preis und Einkauf wie Helles' },
   { name: 'Sekt', color: '#e3cf8f', priceCents: 500, category: 'wein', costCents: 56, source: 'Rotkäppchen 0,75 l (4,19 €) ÷ 7,5 Gläser à 0,1 l' },
   { name: 'Weißwein', color: '#d6df8a', priceCents: 500, category: 'wein', costCents: 146, source: 'Villa Antinori Bianco Toscana 0,75 l, Angebot 5,49 € bis 31.12.2026 (sonst 8,49 € = 2,26 €/Glas) ÷ 3,75 Gläser à 0,2 l' },
   { name: 'Rotwein', color: '#7b1e2b', priceCents: 500, category: 'wein', costCents: 101, source: "Ca' Ernesto Merlot 0,75 l, METRO-App 3,79 € ab 6 Flaschen (3,39 € ab 12 = 0,90 €/Glas) ÷ 3,75 Gläser à 0,2 l" },
