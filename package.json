@@ -2,7 +2,7 @@
   "name": "salsamas-api",
   "version": "1.0.0",
   "private": true,
-  "description": "Abgesicherte Schnittstelle fuer die Salsamas-Webseiten (Kurse, Teilnehmerzahlen, Zahlungsstatus)",
+  "description": "Salsamas: abgesicherte API (Kurse, Teilnehmer, Zahlungen) und Cockpit-App (Kasse, Inventar, Stunden, Dashboard)",
   "main": "src/server.js",
   "type": "commonjs",
   "engines": {
@@ -12,7 +12,8 @@
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
     "gen-key": "node scripts/gen-key.js",
-    "audit": "npm audit --omit=dev"
+    "audit": "npm audit --omit=dev",
+    "demo": "node scripts/demo.js"
   },
   "dependencies": {
     "@google-cloud/firestore": "^9.4.0",

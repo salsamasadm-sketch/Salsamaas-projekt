@@ -1,0 +1,55 @@
+# Salsamas Cockpit: Tests bei jeder Aenderung, automatisch live bei jedem Push auf "main".
+# Anmeldung bei Google ohne gespeicherte Schluessel (Workload Identity Federation).
+# Einrichtung einmalig: scripts/setup-github-deploy.sh in der Google Cloud Shell ausfuehren.
+name: Tests & Live stellen
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # fuer die schluessellose Anmeldung bei Google
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/807195863742/locations/global/workloadIdentityPools/github/providers/salsamas-repo
+          service_account: github-deploy@salsamas.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Live stellen (Cloud Run, Frankfurt)
+        run: |
+          gcloud run deploy salsamas-cockpit \
+            --project salsamas \
+            --region europe-west3 \
+            --source . \
+            --service-account cockpit-run@salsamas.iam.gserviceaccount.com \
+            --set-env-vars "^;^STORE=firestore;NODE_ENV=production;ALLOWED_ORIGINS=https://salsamas.de,https://www.salsamas.de,https://salsamas-pasing.de,https://www.salsamas-pasing.de" \
+            --set-secrets "API_KEYS=cockpit-api-keys:latest,SESSION_SECRET=cockpit-session-secret:latest" \
+            --memory 512Mi --max-instances 3 --quiet

@@ -2,9 +2,11 @@
 const crypto = require('node:crypto');
 const { Firestore } = require('@google-cloud/firestore');
 
+const DOC_COLLECTIONS = ['staff', 'shifts', 'settings', 'products', 'barsessions', 'sales', 'plan', 'invoices', 'purchases'];
+
 /** Dauerhafter Speicher fuer Google Cloud (Cloud Run nutzt automatisch das Service-Konto). */
 class FirestoreStore {
-  constructor(db = new Firestore()) {
+  constructor(db = new Firestore({ ignoreUndefinedProperties: true })) {
     this.db = db;
     this.courses = db.collection('courses');
     this.enrollments = db.collection('enrollments');
@@ -61,6 +63,18 @@ class FirestoreStore {
   updateEnrollment(id, patch) { return this._update(this.enrollments, id, patch); }
   async deleteEnrollment(id) {
     const ref = this.enrollments.doc(id);
+    if (!(await ref.get()).exists) return false;
+    await ref.delete(); return true;
+  }
+  async listAllEnrollments() { return (await this.enrollments.limit(20000).get()).docs.map((d) => d.data()); }
+
+  // Einfache Dokument-Sammlungen (Team, Schichten, Bar-Abende, Einstellungen) fuer die Chef-/Team-App.
+  _col(name) { if (!DOC_COLLECTIONS.includes(name)) throw new Error('unbekannte Sammlung'); return this.db.collection(name); }
+  async listDocs(name) { return (await this._col(name).limit(20000).get()).docs.map((d) => d.data()); }
+  async getDoc(name, id) { const d = await this._col(name).doc(id).get(); return d.exists ? d.data() : null; }
+  async putDoc(name, doc) { await this._col(name).doc(doc.id).set(doc); return doc; }
+  async removeDoc(name, id) {
+    const ref = this._col(name).doc(id);
     if (!(await ref.get()).exists) return false;
     await ref.delete(); return true;
   }
