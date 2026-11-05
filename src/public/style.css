@@ -384,10 +384,10 @@ th.sortable[data-dir="desc"]::after { content: " ↓"; opacity: 1; color: var(--
 .receipt .grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .hero-figure small { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 0; }
 
-/* Standortfarbe Pasing (Platzhalter-Ton, bis die echte Pasing-Farbe feststeht) */
-:root[data-loc="pasing"] { --accent: #12a4a0; --accent-ink: #0a6f6c; --glow: #12a4a0; }
-@media (prefers-color-scheme: dark) { :root[data-loc="pasing"]:not([data-theme="light"]) { --accent-ink: #5fd6d1; } }
-:root[data-loc="pasing"][data-theme="dark"] { --accent-ink: #5fd6d1; }
+/* Standortfarbe Pasing: Weinrot (Salsamas Pasing) */
+:root[data-loc="pasing"] { --accent: #8c1d40; --accent-ink: #8c1d40; --on-accent: #ffffff; --glow: #b0284f; }
+@media (prefers-color-scheme: dark) { :root[data-loc="pasing"]:not([data-theme="light"]) { --accent: #b8335c; --accent-ink: #f08aa5; --glow: #b8335c; } }
+:root[data-loc="pasing"][data-theme="dark"] { --accent: #b8335c; --accent-ink: #f08aa5; --glow: #b8335c; }
 /* Standort sichtbar machen: farbige Linie unter dem Kopf */
 :root[data-loc] .top { box-shadow: inset 0 -3px 0 var(--accent); }
 .seg button.active { transition: background-color .25s; }
@@ -427,7 +427,7 @@ th.sortable[data-dir="desc"]::after { content: " ↓"; opacity: 1; color: var(--
 .plan-kpis { margin-bottom: 14px; }
 .legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin: 4px 0 10px; }
 .lg::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
-.lg.l-maxvorstadt::before { background: #fca800; } .lg.l-pasing::before { background: #12a4a0; }
+.lg.l-maxvorstadt::before { background: #fca800; } .lg.l-pasing::before { background: #8c1d40; }
 .lg.open::before { border: 1.5px dashed var(--ink-2); background: transparent; }
 .lg.conflict::before { background: var(--bad); }
 .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: start; }
@@ -441,7 +441,8 @@ th.sortable[data-dir="desc"]::after { content: " ↓"; opacity: 1; color: var(--
 .day-slots { display: grid; gap: 6px; padding: 8px; }
 .slot { --loc: #fca800; position: relative; display: grid; gap: 3px; text-align: left; padding: 8px 9px 8px 12px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--sheet); color: var(--ink); font: inherit; cursor: pointer; overflow: hidden; transition: transform .12s, box-shadow .18s, border-color .18s; }
 .slot::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--loc); }
-.slot.l-pasing { --loc: #12a4a0; }
+.slot.l-pasing { --loc: #8c1d40; }
+.slot.l-pasing .slot-loc { color: #ffffff; }
 .slot:hover { transform: translateY(-2px); border-color: var(--ink); box-shadow: 0 10px 20px -14px rgba(0, 0, 0, .55); }
 .slot.k-workshop { background: color-mix(in srgb, var(--loc) 12%, var(--sheet)); }
 .slot.open { border-style: dashed; background: transparent; }
