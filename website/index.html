@@ -874,6 +874,16 @@
   .milestone-row b{font-weight:800;letter-spacing:-.03em;}
   .btn{font-weight:700;letter-spacing:-.005em;}
   nav.links a.nav-link{font-weight:600;}
+  /* Takt-Wörter passen sich der Spaltenbreite an (nie in die Karten hinein) */
+  @media (min-width:1100px){
+    .hero .beat{container-type:inline-size;width:100%;}
+    .hero .beat span{font-size:clamp(3rem,18.5cqi,7.5rem);}
+    .hero .beat span:nth-child(2){padding-left:.4em;}
+    .hero .beat span:nth-child(3){padding-left:.8em;}
+  }
+  @media (min-width:601px) and (max-width:1099px){
+    .beat span{font-size:clamp(3.4rem,10vw,6.5rem);}
+  }
 </style>
 </head>
 <body>
