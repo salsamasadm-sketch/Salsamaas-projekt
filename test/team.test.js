@@ -274,7 +274,7 @@ test('Getraenkekarte, Einkaufspreise, Wareneinsatz und Einkaeufe', async () => {
   const s = await start();
   const { chef } = await setup(s);
   const imp = (await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body;
-  assert.equal(imp.created, 14);
+  assert.equal(imp.created, 19); // 14 Getränke + 6 Tickets, 'Eintritt Übungsabend' gab es schon (keine Doppelung)
   assert.equal((await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body.created, 0); // keine Doppelungen
   const products = (await s.call('GET', '/app/api/products', { token: chef })).body;
   const helles = products.find((p) => p.name === 'Helles');
@@ -291,4 +291,21 @@ test('Getraenkekarte, Einkaufspreise, Wareneinsatz und Einkaeufe', async () => {
   assert.match(k.hint, /Einkäufe 263,60 €/);
   assert.equal(d.totals.cogsCents, 781);
   s.close();
+});
+
+test('Gaeste zaehlen nur Eintritte zum Uebungsabend, Workshop-Tickets nicht doppelt', () => {
+  const { TICKETS } = require('../src/catalog');
+  const products = TICKETS.map((t, i) => ({ id: `t${i}`, ...t }));
+  const id = (n) => products.find((p) => p.name === n).id;
+  const sales = [
+    { payment: 'bar', items: [{ productId: id('Workshop mit Partner (p. P.)'), qty: 2, priceCents: 1500 }] },
+    { payment: 'bar', items: [{ productId: id('Workshop-Teilnehmer bleibt (inkl.)'), qty: 2, priceCents: 0 }] },
+    { payment: 'karte', items: [{ productId: id('Eintritt Übungsabend'), qty: 3, priceCents: 1000 }] },
+  ];
+  const r = computeSettlement({ id: 's', date: '2026-11-07', location: 'pasing', station: 'tuer', cashStartCents: 0, cashEndCents: 3000, closedAt: 'x' }, sales, products);
+  assert.equal(r.guests, 5);              // 3 Eintritt + 2 Workshop-Teilnehmer, die bleiben
+  assert.equal(r.workshopCount, 2);
+  assert.equal(r.ticketRevenueCents, 6000);
+  assert.equal(r.ticketCostCents, 30);    // 5 Eventbaender
+  assert.equal(r.cashDiffCents, 0);
 });

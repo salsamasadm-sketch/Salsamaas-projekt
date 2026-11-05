@@ -25,9 +25,22 @@ const CATALOG = [
   { name: 'Cuba Libre', color: '#4a2c1a', priceCents: 800, category: 'longdrinks', costCents: 110, source: 'Havana Club 3 Años 0,7 l (12,99 €) 4 cl = 0,74 € + Cola 1,25 l PET 0,2 l = 0,23 € + 1/4 Limette 0,13 €' },
 ];
 
+/**
+ * Tuer: Eintritt und Workshops (Preise laut Pablo, 05.11.2026). Partnerpreise gelten pro Person
+ * (ein Paar = 2x tippen). Eventband 0,06 € nur beim Eintritt zum Uebungsabend.
+ */
+const TICKETS = [
+  { name: 'Eintritt Übungsabend', priceCents: 1000, category: 'eintritt', costCents: 6, source: 'inkl. 1 Eventband (100er-Pack 5,99 €)' },
+  { name: 'Workshop-Teilnehmer bleibt (inkl.)', priceCents: 0, category: 'eintritt', costCents: 6, source: 'Workshop-Teilnehmer zum Übungsabend, inkl. 1 Eventband' },
+  { name: 'Workshop Einzel', priceCents: 2000, category: 'workshop', costCents: 0 },
+  { name: 'Workshop mit Partner (p. P.)', priceCents: 1500, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
+  { name: '2 Workshops Einzel', priceCents: 3500, category: 'workshop', costCents: 0 },
+  { name: '2 Workshops mit Partner (p. P.)', priceCents: 3000, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
+];
+
 /** Farben fuer Eintritt/Workshops/Kursgebuehren und als Rueckfall nach Namen (Kassen-Buttons) */
 const CATEGORY_COLORS = { eintritt: '#14161b', workshop: '#c2185b', kursgebuehr: '#2b6cb0', softdrinks: '#5aaee0', bier: '#f2c230', wein: '#d6df8a', cocktails: '#f26b21', longdrinks: '#4a2c1a', shots: '#8d6e63', heiss: '#795548', snacks: '#a1887f', sonstiges: '#8a93a3' };
 /** Eventbaender (METRO, Tyvek neongelb): 1 Band pro Gast, Annahme 100er-Pack 5,99 € -> 0,06 € */
 const WRISTBAND_CENTS = 6;
 
-module.exports = { CATALOG, CATEGORY_COLORS, WRISTBAND_CENTS };
+module.exports = { CATALOG, TICKETS, CATEGORY_COLORS, WRISTBAND_CENTS };

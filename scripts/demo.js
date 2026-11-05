@@ -30,8 +30,9 @@ async function seedInto(store) {
   const fees = [['Kurs 4 Wochen', 9900, 'kursgebuehr'], ['Einzelstunde', 1500, 'kursgebuehr'], ['10er-Karte', 12000, 'kursgebuehr']]
     .map(([name, priceCents, category], i) => ({ id: `k${i + 1}`, name, priceCents, category, active: true, sort: 5 + i, createdAt: new Date(now).toISOString() }));
   for (const p of fees) await store.putDoc('products', p);
-  const tickets = [['Eintritt Übungsabend', 800, 'eintritt'], ['Workshop + Party', 2500, 'workshop'], ['Workshop-Teilnehmer inkl.', 0, 'eintritt']]
-    .map(([name, priceCents, category], i) => ({ id: `t${i + 1}`, name, priceCents, category, costCents: 6, source: 'Eventband (METRO Tyvek, Annahme 100er-Pack 5,99 €)', active: true, sort: i, createdAt: new Date(now).toISOString() }));
+  const { TICKETS } = require('../src/catalog');
+  const tickets = TICKETS.map((c, i) => ({ id: `t${i + 1}`, ...c, active: true, sort: i, createdAt: new Date(now).toISOString() }));
+  // Indizes: 0 Eintritt 10 €, 1 inkl. 0 €, 2 Workshop Einzel, 3 mit Partner, 4 2 Workshops Einzel, 5 2 Workshops Partner
   for (const p of tickets) await store.putDoc('products', p);
   // Echte Salsamas-Getraenkekarte mit Einkaufspreisen aus der METRO-Rechnung
   const { CATALOG } = require('../src/catalog');
@@ -78,7 +79,12 @@ async function seedInto(store) {
     // Eintritt: an Samstagen mit Workshop kommen Workshop-Leute inkl. zur Party
     const withWorkshop = wd === 6 && rnd() < 0.6;
     for (let g = 0; g < guests; g++) {
-      const t = withWorkshop && g < 22 ? (g < 18 ? tickets[1] : tickets[2]) : tickets[0];
+      // Workshop am Samstag: Teilnehmer kaufen Workshop-Tickets und bleiben mit 0-€-Eintritt
+      if (withWorkshop && g < 18) {
+        const w = pick([tickets[2], tickets[3], tickets[3], tickets[4], tickets[5], tickets[5]]);
+        await store.putDoc('sales', { id: crypto.randomUUID(), sessionId: doorSid, at: new Date(open.getTime() - 4 * 3_600_000).toISOString(), by: 'sofia', payment: rnd() < 0.5 ? 'bar' : 'karte', items: [{ productId: w.id, qty: 1, priceCents: w.priceCents }] });
+      }
+      const t = withWorkshop && g < 14 ? tickets[1] : tickets[0];
       await store.putDoc('sales', { id: crypto.randomUUID(), sessionId: doorSid, at: new Date(open.getTime() + rnd() * 90 * 60_000).toISOString(), by: 'sofia', payment: rnd() < 0.6 ? 'bar' : 'karte', items: [{ productId: t.id, qty: 1, priceCents: t.priceCents }] });
     }
     // Kursgebuehren vor Ort (vor dem Uebungsabend)
