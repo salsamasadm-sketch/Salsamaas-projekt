@@ -18,7 +18,15 @@
   const STATION_SHORT = { tuer: 'Tür', theke: 'Theke', kombi: 'Kombi' };
   const STATION_KASSE = { tuer: 'Tür-Kasse', theke: 'Theken-Kasse', kombi: 'Kombi-Kasse (Tür + Theke)' };
   const DOOR_CATS = ['eintritt', 'checkin', 'workshop'];
-  const allowedAt = (st, cat) => (st === 'kombi' ? true : st === 'tuer' ? DOOR_CATS.includes(cat) : !DOOR_CATS.includes(cat));
+  // Anlass: Uebungsabend/Party (keine Kursgebuehren) oder Kursbetrieb (alles) – gleiche Regel wie auf dem Server
+  const OCCASION = { abend: 'Übungsabend / Party', kurs: 'Kursbetrieb' };
+  const allowedAt = (st, cat, occ = 'abend') => {
+    if (cat === FEE) return occ === 'kurs';
+    if (occ === 'kurs') return st === 'tuer' ? DOOR_CATS.includes(cat) : true;
+    return st === 'kombi' ? true : st === 'tuer' ? DOOR_CATS.includes(cat) : !DOOR_CATS.includes(cat);
+  };
+  // Vorschlag: Fr/Sa oder ab 20 Uhr = Uebungsabend, sonst Kursbetrieb
+  const guessOccasion = () => { const n = new Date(); const wd = n.getDay(); return wd === 5 || wd === 6 || n.getHours() >= 20 ? 'abend' : 'kurs'; };
   const CAT = { eintritt: 'Eintritt', checkin: 'Pass-Check-ins (Check-in = bezahlt)', workshop: 'Workshops', kursgebuehr: 'Kursgebühren', softdrinks: 'Softdrinks', bier: 'Bier', wein: 'Wein & Sekt', cocktails: 'Cocktails', longdrinks: 'Longdrinks', shots: 'Shots', heiss: 'Heißgetränke', snacks: 'Snacks', sonstiges: 'Sonstiges' };
   const PAY = { bar: 'Bar', karte: 'Karte', gratis: 'Gratis/Personal' };
 
@@ -231,7 +239,8 @@
     }
     if (cur.locked) { station = cur.station; if (cur.location !== loc) setLoc(cur.location); else applyLoc(loc); }
     const all = await api('GET', '/products');
-    const products = all.filter((p) => allowedAt(station, p.category));
+    const occasion = cur.session?.occasion || 'abend';
+    const products = all.filter((p) => allowedAt(station, p.category, cur.session ? occasion : 'kurs'));
     const root = cur.locked
       ? h('div', {}, h('div', { class: 'station-lock' }, h('span', { class: 'eyebrow' }, 'Deine Kasse'), h('b', {}, `${STATION[station]} · ${LOC[loc]}`), h('span', { class: 'muted small' }, 'aus deiner Schicht')))
       : h('div', {}, seg(LOC, loc, (l) => { setLoc(l); route('kasse'); }),
@@ -256,13 +265,19 @@
   function openForm(products, lastStock) {
     const cash = h('input', { inputmode: 'decimal', required: true, placeholder: 'z. B. 150,00' });
     const st = stockTable(products, lastStock);
+    let occ = guessOccasion();
+    const occBox = h('div', {});
+    const renderOcc = () => occBox.replaceChildren(h('label', {}, 'Anlass'), seg(OCCASION, occ, (k) => { occ = k; renderOcc(); }),
+      h('p', { class: 'small muted occ-hint' }, occ === 'abend' ? (station === 'theke' ? 'Übungsabend: an der Theke nur Getränke.' : 'Übungsabend: Eintritt, Pass-Check-ins und Workshops' + (station === 'kombi' ? ' + Getränke.' : '.')) + ' Keine Kursgebühren.' : 'Kursbetrieb: inkl. Kursgebühren, Probe- und Privatstunden.'));
+    renderOcc();
     return h('form', { class: 'card', onsubmit: run(async () => {
       const c = toCents(cash.value); if (c == null) throw new Error('Kassenbestand prüfen');
-      await api('POST', '/bar/open', { location: loc, station, cashStartCents: c, stockStart: station === 'tuer' ? {} : st.read() });
+      await api('POST', '/bar/open', { location: loc, station, occasion: occ, cashStartCents: c, stockStart: station === 'tuer' ? {} : st.read() });
       toast('Kasse geöffnet'); route('kasse');
     }) },
     h('h1', {}, `${STATION_KASSE[station]} öffnen – ${LOC[loc]}`),
     h('p', { class: 'muted small' }, station === 'tuer' ? 'Vor dem ersten Gast: Wechselgeld in der Tür-Kasse zählen. An der Tür gibt es kein Inventar.' : 'Vor dem ersten Verkauf: Wechselgeld in der Kasse zählen und den Bestand an der Bar zählen. Vorausgefüllt ist der Endbestand vom letzten Mal – bitte kontrollieren.'),
+    occBox,
     field('Kassenbestand (Wechselgeld) in €', cash),
     station !== 'tuer' && h('h2', {}, 'Inventar – Anfangsbestand'), station !== 'tuer' && st.el,
     h('button', { class: 'btn block', type: 'submit' }, 'Kasse öffnen'));
@@ -285,7 +300,7 @@
     let lastTotal = 0;
 
     const renderHead = () => head.replaceChildren(
-      h('div', { class: 'row spread' }, h('b', {}, `${STATION_KASSE[station]} offen · ${LOC[ses.location]}`), h('span', { class: 'muted small' }, `seit ${time(ses.openedAt)} (${ses.openedBy})`)),
+      h('div', { class: 'row spread' }, h('b', {}, `${STATION_KASSE[station]} offen · ${LOC[ses.location]} · ${OCCASION[ses.occasion || 'abend']}`), h('span', { class: 'muted small' }, `seit ${time(ses.openedAt)} (${ses.openedBy})`)),
       h('div', { class: 'grid3 small' },
         h('div', {}, h('div', { class: 'muted' }, 'Umsatz heute'), h('b', {}, eur(set.revenueCents))),
         h('div', {}, h('div', { class: 'muted' }, set.courseFeeCents ? 'Eintritt / Kurs / Getränke' : 'Eintritt / Getränke'), h('b', {}, set.courseFeeCents ? `${eur(set.ticketRevenueCents)} / ${eur(set.courseFeeCents)} / ${eur(set.drinksRevenueCents)}` : `${eur(set.ticketRevenueCents)} / ${eur(set.drinksRevenueCents)}`)),

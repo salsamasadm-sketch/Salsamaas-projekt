@@ -103,7 +103,7 @@ function computeSettlement(session, sales, products = []) {
   const cashCounted = session.cashEndCents ?? null;
   const missingUnits = items.reduce((a, i) => a + (i.diff != null && i.diff < 0 ? -i.diff : 0), 0);
   return {
-    sessionId: session.id, date: session.date, location: session.location, station: stationOf(session), status: session.closedAt ? 'closed' : 'open',
+    sessionId: session.id, date: session.date, location: session.location, station: stationOf(session), occasion: session.occasion === 'kurs' ? 'kurs' : 'abend', status: session.closedAt ? 'closed' : 'open',
     salesCount: count, revenueCents: cash + card, cashSalesCents: cash, cardSalesCents: card,
     drinksRevenueCents: cash + card - ticketRev - courseRev, ticketRevenueCents: ticketRev, ticketCount, ticketCostCents: [...tickets.values()].reduce((a, t) => a + t.qty * (costOf.get(t.productId) ?? 0), 0),
     courseFeeCents: courseRev, courseFees: [...fees.values()].sort((a, b) => b.revenueCents - a.revenueCents),
@@ -128,8 +128,19 @@ function computeSettlement(session, sales, products = []) {
 const STATIONS = ['tuer', 'theke', 'kombi'];
 const stationOf = (session) => (STATIONS.includes(session.station) ? session.station : 'theke');
 /** Kombi = eine Person macht Tuer und Theke: alles erlaubt, mit Inventar. */
-const allowedAtStation = (station, category) => (station === 'kombi' ? true : station === 'tuer' ? TICKET_CATEGORIES.includes(category) : !TICKET_CATEGORIES.includes(category));
+/**
+ * Was am Kassenplatz verkauft werden darf – abhaengig vom Anlass:
+ *  abend (Uebungsabend/Party): Theke nur Getraenke, Tuer Eintritt/Pass/Workshops, Kombi beides; keine Kursgebuehren
+ *  kurs (Kursbetrieb): Theke und Kombi alles, Tuer Tickets + Kursgebuehren
+ */
+const allowedAtStation = (station, category, occasion = 'abend') => {
+  if (COURSE_CATEGORIES.includes(category)) return occasion === 'kurs';
+  if (occasion === 'kurs') return station === 'tuer' ? TICKET_CATEGORIES.includes(category) : true;
+  if (station === 'kombi') return true;
+  return station === 'tuer' ? TICKET_CATEGORIES.includes(category) : !TICKET_CATEGORIES.includes(category);
+};
+const OCCASIONS = ['abend', 'kurs'];
 /** Kassenplatz aus der Taetigkeit der Schicht */
 const stationForKind = (kind) => (kind === 'empfang' ? 'tuer' : kind === 'kombi' ? 'kombi' : 'theke');
 
-module.exports = { computeSettlement, billedHours, buildHelpers, helperShift, TICKET_CATEGORIES, COURSE_CATEGORIES, STATIONS, stationOf, allowedAtStation, stationForKind };
+module.exports = { computeSettlement, billedHours, buildHelpers, helperShift, TICKET_CATEGORIES, COURSE_CATEGORIES, STATIONS, OCCASIONS, stationOf, allowedAtStation, stationForKind };

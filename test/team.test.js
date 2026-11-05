@@ -342,7 +342,10 @@ test('Privatstunde durch das Team: Leader 30 €, Follower 15 € als Verguetung
   const priv = (await s.call('GET', '/app/api/products', { token: chef })).body.find((p) => p.name === 'Privatstunde');
   assert.equal(priv.privateLesson, true);
   await s.call('POST', '/app/api/shifts/start', { token: lena, body: { kind: 'bar', location: 'pasing' } });
-  const ses = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', cashStartCents: 0, stockStart: {} } })).body;
+  // Beim Uebungsabend gibt es an der Theke keine Kursgebuehren
+  const abend = (await s.call('POST', '/app/api/bar/open', { token: chef, body: { location: 'maxvorstadt', occasion: 'abend', cashStartCents: 0, stockStart: {} } })).body;
+  assert.equal((await s.call('POST', `/app/api/bar/${abend.id}/sales`, { token: chef, body: { payment: 'bar', items: [{ productId: priv.id, qty: 1 }] } })).body.error, 'wrong_station');
+  const ses = (await s.call('POST', '/app/api/bar/open', { token: lena, body: { location: 'pasing', occasion: 'kurs', cashStartCents: 0, stockStart: {} } })).body;
   const sale = (await s.call('POST', `/app/api/bar/${ses.id}/sales`, { token: lena, body: { payment: 'karte', items: [{ productId: priv.id, qty: 2 }], privateLesson: { leader: 'diego', follower: 'lena' } } })).body;
   const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
   const diego = d.personnel.byStaff.find((x) => x.ref === 'diego');
@@ -354,4 +357,18 @@ test('Privatstunde durch das Team: Leader 30 €, Follower 15 € als Verguetung
   await s.call('DELETE', `/app/api/bar/${ses.id}/sales/${sale.id}`, { token: lena });
   assert.equal((await s.call('GET', '/app/api/shifts', { token: chef })).body.filter((x) => x.kind === 'privat').length, 0);
   s.close();
+});
+
+test('Anlass: Uebungsabend ohne Kursgebuehren, Kursbetrieb mit allem', () => {
+  const { allowedAtStation } = require('../src/bar');
+  assert.equal(allowedAtStation('theke', 'bier', 'abend'), true);
+  assert.equal(allowedAtStation('theke', 'kursgebuehr', 'abend'), false);
+  assert.equal(allowedAtStation('theke', 'eintritt', 'abend'), false);
+  assert.equal(allowedAtStation('kombi', 'workshop', 'abend'), true);
+  assert.equal(allowedAtStation('kombi', 'kursgebuehr', 'abend'), false);
+  assert.equal(allowedAtStation('tuer', 'bier', 'abend'), false);
+  assert.equal(allowedAtStation('theke', 'kursgebuehr', 'kurs'), true);
+  assert.equal(allowedAtStation('theke', 'workshop', 'kurs'), true);
+  assert.equal(allowedAtStation('tuer', 'kursgebuehr', 'kurs'), true);
+  assert.equal(allowedAtStation('tuer', 'cocktails', 'kurs'), false);
 });

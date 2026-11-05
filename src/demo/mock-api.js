@@ -6,9 +6,9 @@
  */
 (() => {
   const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = window.__cockpit.dashboard;
-  const { computeSettlement, buildHelpers, helperShift } = window.__cockpit.bar;
+  const { computeSettlement, buildHelpers, helperShift, allowedAtStation } = window.__cockpit.bar;
   const { computeWeek, computeInvoices, mondayOf, addDays } = window.__cockpit.plan;
-  const KEY = 'cockpit.demo.db.v18';
+  const KEY = 'cockpit.demo.db.v19';
   const fresh = () => JSON.parse(JSON.stringify(window.__cockpit.seed));
   let db;
   try { db = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch { db = fresh(); }
@@ -94,7 +94,7 @@
       const station = ['tuer', 'kombi'].includes(body.station) ? body.station : 'theke';
       const sc = scope(); if (!sc.owner && (body.location !== sc.location || station !== sc.station)) return err(403, 'wrong_station');
       if (list('barsessions').some((b) => b.location === body.location && stOf(b) === station && !b.closedAt)) return err(409, 'session_open');
-      const ses = { id: uid(), date: today(), stockStart: {}, ...body, station, openedBy: by, openedAt: new Date().toISOString(), closedAt: null };
+      const ses = { id: uid(), date: today(), stockStart: {}, occasion: 'abend', ...body, station, openedBy: by, openedAt: new Date().toISOString(), closedAt: null };
       db.barsessions[ses.id] = ses; save(); return json(201, ses);
     }
     if ((m = path.match(/^\/bar\/([^/]+)\/sales$/))) {
@@ -103,7 +103,7 @@
       if (method === 'GET') return json(200, list('sales').filter((x) => x.sessionId === ses.id).sort((a, b) => b.at.localeCompare(a.at)));
       if (ses.closedAt) return err(409, 'session_closed');
       const isTicket = (pid) => ['eintritt', 'workshop', 'checkin'].includes(db.products[pid]?.category);
-      if (body.items.some((it) => !db.products[it.productId] || (stOf(ses) !== 'kombi' && isTicket(it.productId) !== (stOf(ses) === 'tuer')))) return err(400, 'wrong_station');
+      if (body.items.some((it) => !db.products[it.productId] || !allowedAtStation(stOf(ses), db.products[it.productId].category, ses.occasion))) return err(400, 'wrong_station');
       const items = body.items.map((it) => ({ productId: it.productId, qty: it.qty, priceCents: db.products[it.productId].priceCents }));
       const sale = { id: uid(), sessionId: ses.id, at: new Date().toISOString(), by, payment: body.payment, items, ...(body.note && { note: String(body.note).slice(0, 60) }) };
       const privQty = items.filter((i) => db.products[i.productId]?.privateLesson || /privatstunde/i.test(db.products[i.productId]?.name || '')).reduce((a, i) => a + i.qty, 0);

@@ -7,7 +7,7 @@ const { hashPin, verifyPin } = require('./session');
 const { sha256 } = require('./auth');
 const { computeDashboard, computeYear, rangeOf, mergeSettings, berlinDate } = require('./dashboard');
 const { computeWeek, computeInvoices, mondayOf, addDays, KINDS: PLAN_KINDS } = require('./plan');
-const { computeSettlement, buildHelpers, helperShift, STATIONS, stationOf, allowedAtStation, stationForKind } = require('./bar');
+const { computeSettlement, buildHelpers, helperShift, STATIONS, OCCASIONS, stationOf, allowedAtStation, stationForKind } = require('./bar');
 const S = require('./schemas');
 
 /**
@@ -42,7 +42,7 @@ const productCreate = z.object({ ...passFields, privateLesson: z.boolean().optio
 const productPatch = z.object({ ...passFields, privateLesson: z.boolean().optional(), name: pname.optional(), color: hexColor.nullable().optional(), priceCents: cents(100_000).optional(), costCents: cents(100_000).nullable().optional(), category: z.enum(CATEGORIES).optional(), active: z.boolean().optional(), sort: z.number().int().min(0).max(999).optional() }).strict()
   .refine((o) => Object.keys(o).length > 0, 'mindestens ein Feld ändern');
 const stock = z.record(S.id, z.number().int().min(0).max(10_000)).refine((o) => Object.keys(o).length <= 300, 'zu viele Artikel');
-const sessionOpen = z.object({ location: LOC, station: z.enum(STATIONS).default('theke'), cashStartCents: cents(10_000_000), stockStart: stock.default({}) }).strict();
+const sessionOpen = z.object({ location: LOC, station: z.enum(STATIONS).default('theke'), occasion: z.enum(OCCASIONS).default('abend'), cashStartCents: cents(10_000_000), stockStart: stock.default({}) }).strict();
 const saleSchema = z.object({ privateLesson: z.object({ leader: ref.nullable().optional(), follower: ref.nullable().optional() }).strict().optional(), note: z.string().trim().min(1).max(60).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen').optional(), payment: z.enum(['bar', 'karte', 'gratis']), items: z.array(z.object({ productId: S.id, qty: z.number().int().min(1).max(50) }).strict()).min(1).max(30) }).strict();
 const helperIn = z.object({ name: z.string().trim().min(2).max(40).refine((s) => !/[<>\u0000-\u001F]/.test(s), 'unerlaubte Zeichen'), start: iso, end: iso, rateCents: cents(10_000), payout: z.enum(['bar', 'ueberweisung']) }).strict()
   .refine((h) => new Date(h.end) > new Date(h.start) && new Date(h.end) - new Date(h.start) <= 16 * 3_600_000, 'Aushilfe: Ende muss nach Beginn liegen (max. 16 Std.)');
@@ -228,7 +228,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     const sessions = (await store.listDocs('barsessions')).filter((b) => b.location === location && stationOf(b) === station);
     const open = sessions.find((b) => !b.closedAt) || null;
     const last = sessions.filter((b) => b.closedAt).sort((a, b) => b.closedAt.localeCompare(a.closedAt))[0];
-    res.json({ location, station, locked: !scope.owner, session: open && { id: open.id, date: open.date, location: open.location, station, openedBy: open.openedBy, openedAt: open.openedAt }, settlement: open ? await settlement(open) : null, lastStock: last?.stockEnd || {}, lastSessionId: last?.id || null });
+    res.json({ location, station, locked: !scope.owner, session: open && { id: open.id, date: open.date, location: open.location, station, occasion: open.occasion === 'kurs' ? 'kurs' : 'abend', openedBy: open.openedBy, openedAt: open.openedAt }, settlement: open ? await settlement(open) : null, lastStock: last?.stockEnd || {}, lastSessionId: last?.id || null });
   }));
 
   r.post('/bar/open', wrap(async (req, res) => {
@@ -256,7 +256,7 @@ function createTeamRouter({ store, keys, sessions, logger }) {
     for (const it of d.items) {
       const p = products.get(it.productId);
       if (!p || p.active === false) return res.status(400).json({ error: 'unknown_product' });
-      if (!allowedAtStation(stationOf(ses), p.category)) return res.status(400).json({ error: 'wrong_station' });
+      if (!allowedAtStation(stationOf(ses), p.category, ses.occasion)) return res.status(400).json({ error: 'wrong_station' });
       items.push({ productId: p.id, qty: it.qty, priceCents: p.priceCents });
     }
     const sale = { id: crypto.randomUUID(), sessionId: ses.id, at: new Date().toISOString(), by: by(req), payment: d.payment, items, ...(d.note && { note: d.note }) };
