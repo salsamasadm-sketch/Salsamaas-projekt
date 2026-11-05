@@ -63,7 +63,9 @@ const COURSE_FEES = [
   { name: 'Kurs 4 × 60 Min. Studierende mit Partner (p. P.)', priceCents: 5900, category: 'kursgebuehr', costCents: 0, source: 'Studierende + Partner: nochmal 10 € günstiger – Paar = 2× tippen' },
   { name: 'Kurs 2 × 120 Min.', priceCents: 10000, category: 'kursgebuehr', costCents: 0, source: 'z. B. Mittelstufe 1 Pasing' },
   { name: 'Kurs 2 × 120 Min. mit Partner (p. P.)', priceCents: 9000, category: 'kursgebuehr', costCents: 0, source: '10 € günstiger pro Person – Paar = 2× tippen' },
-  { name: '10er-Karte', priceCents: 24900, category: 'kursgebuehr', costCents: 0, source: '3 Monate gültig' },
+  { name: 'Kurs 2 × 120 Min. Studierende', priceCents: 9000, category: 'kursgebuehr', costCents: 0 },
+  { name: 'Kurs 2 × 120 Min. Studierende mit Partner (p. P.)', priceCents: 8000, category: 'kursgebuehr', costCents: 0, source: 'Studierende + Partner: nochmal 10 € günstiger – Paar = 2× tippen' },
+  { name: '10er-Karte', priceCents: 24900, category: 'kursgebuehr', costCents: 0, source: '3 Monate gültig · kein Partnerrabatt' },
   { name: '10er-Karte Studierende', priceCents: 21900, category: 'kursgebuehr', costCents: 0, source: '3 Monate gültig' },
   { name: 'Privatstunde', priceCents: 10000, category: 'kursgebuehr', costCents: 0, privateLesson: true, source: 'pro Person · unterrichtet jemand aus dem Team: Leader 30 €, Follower 15 €' },
 ];
