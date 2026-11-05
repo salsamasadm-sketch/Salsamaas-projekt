@@ -27,9 +27,8 @@ Je Standort wird nur `--accent*` getauscht (`body.theme-pasing`). Kein Dark Mode
 
 ## Typografie
 
-- **Bodoni Moda** (variabel, aufrecht und kursiv) für H1/H2, Preise, Jahreszahlen und Studio-Namen; kursiv für die Takt-Wörter im Hero (wie ein Tanzplakat).
-- **Geist** (variabel) für Text, Navigation, Buttons und kleine Überschriften (H3, Team-Namen).
-- Beide Schriften sind in der Datei eingebettet. Keine Aufrufe an Google-Server.
+- **Plus Jakarta Sans** (variabel, Stärke 200–800) für alles, von Überschriften über Text bis Buttons, von dir ausgewählt. Überschriften 700–800 mit enger Laufweite (−0,03 bis −0,05em), Text 400, Buttons 700.
+- Die Schrift ist in der Datei eingebettet (27 KB). Keine Aufrufe an Google-Server.
 
 | Token | Größe | Einsatz |
 |---|---|---|
