@@ -13,9 +13,14 @@
 - **Recht und SEO:** Das Impressum nennt jetzt § 5 DDG statt TMG, das seit 2024 nicht mehr gilt. E-Mail-Adressen sind klickbar. Postleitzahlen stehen in den strukturierten Daten. Im Footer sind Instagram und E-Mail verlinkt.
 - **Barrierefreiheit:** Skip-Link, sichtbarer Tastatur-Fokus, `aria`-Attribute und reduzierte Animation, wenn das im System so eingestellt ist.
 
+## Design v2 „Noche“
+- Schriften: **Bricolage Grotesque** für Überschriften und **Manrope** für Text, beide direkt in der Datei. Google Fonts wird nicht mehr geladen.
+- Farben: Nachtviolett `#1E1420`, Gold `#F5A300`, Weinrot `#7B2334`, Rosé-Weiß `#F7F2F4`. Die Schatten sind violett getönt und haben drei Stufen.
+- Hero: Salsa, Bachata und Kizomba erscheinen im Salsa-Takt 1-2-3 / 5-6-7. Nach sechs Takten bleiben sie stehen. Ist im System „Bewegung reduzieren“ eingestellt, bleiben sie von Anfang an still.
+- Schwebende Navigation, Studio-Karten mit Farbkante, Kursangebot als ruhige Liste, das Paar-Paket als dunkle Hauptkarte, Team-Karten, dunkler Footer.
+
 ## Noch offen (braucht Entscheidung oder Material)
 - **Datenschutzerklärung fehlt.** Sie ist Pflicht und muss Google Fonts, das bSport-Widget und den Chat abdecken.
-- **Google Fonts werden von Google-Servern geladen.** Das ist abmahnrelevant (LG München 2022). Die Schriften sollten besser selbst gehostet werden.
 - Die **Bewertungen** in den strukturierten Daten (5.0/36, 4.8/38) sind fest eingetragen. Sie sollten regelmäßig geprüft werden.
 - `og-image.jpg` für die Social-Vorschau muss beim Hosting vorhanden sein.
 - **Pasing-Adresse** auf der Seite: „an den Pasing Arcaden“ ohne Straße. Im Impressum steht „Am Schützeneck 3“.
