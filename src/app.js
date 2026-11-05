@@ -11,6 +11,16 @@ function createApp({ store, keys, sessions, allowedOrigins = [], logger = (l) =>
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // Cloud Run: ein Proxy davor -> echte Client-IP fuer Rate-Limits
+  // Ueber Firebase Hosting (salsamas.web.app / eigene Domain) liegt ein weiterer Proxy davor:
+  // dann ist die echte Client-IP der vorletzte Eintrag in X-Forwarded-For. Sonst wuerden sich alle
+  // Handys eine IP teilen (gemeinsame Anmelde-Sperren und Anfrage-Limits).
+  app.use((req, res, next) => {
+    if (req.get('x-fh-requested-host')) {
+      const hops = String(req.get('x-forwarded-for') || '').split(',').map((s) => s.trim()).filter(Boolean);
+      if (hops.length >= 2) Object.defineProperty(req, 'ip', { value: hops[hops.length - 2], configurable: true });
+    }
+    next();
+  });
   app.use(helmet({ hsts: { maxAge: 63072000, includeSubDomains: true }, contentSecurityPolicy: { directives: { defaultSrc: ["'none'"] } } }));
 
   // CORS nur fuer die eigenen Webseiten (Allowlist), nie "*".

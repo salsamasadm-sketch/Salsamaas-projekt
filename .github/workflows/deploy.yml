@@ -43,12 +43,19 @@ jobs:
           workload_identity_provider: projects/807195863742/locations/global/workloadIdentityPools/github/providers/salsamas-repo
           service_account: github-deploy@salsamas.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
+      - name: Container bauen (Cloud Build, Frankfurt)
+        run: |
+          gcloud builds submit . \
+            --project salsamas --region europe-west3 \
+            --tag "europe-west3-docker.pkg.dev/salsamas/cloud-run-source-deploy/salsamas-cockpit:${{ github.sha }}" \
+            --gcs-source-staging-dir "gs://run-sources-salsamas-europe-west3/github" \
+            --suppress-logs
       - name: Live stellen (Cloud Run, Frankfurt)
         run: |
           gcloud run deploy salsamas-cockpit \
             --project salsamas \
             --region europe-west3 \
-            --source . \
+            --image "europe-west3-docker.pkg.dev/salsamas/cloud-run-source-deploy/salsamas-cockpit:${{ github.sha }}" \
             --service-account cockpit-run@salsamas.iam.gserviceaccount.com \
             --set-env-vars "^;^STORE=firestore;NODE_ENV=production;ALLOWED_ORIGINS=https://salsamas.de,https://www.salsamas.de,https://salsamas-pasing.de,https://www.salsamas-pasing.de" \
             --set-secrets "API_KEYS=cockpit-api-keys:latest,SESSION_SECRET=cockpit-session-secret:latest" \
