@@ -848,6 +848,12 @@
   footer.site .logo-img{filter:none;}
   footer.site h5{font-family:var(--font-body);}
   .team-card .team-photo span{font-family:var(--font-body)!important;font-weight:650;letter-spacing:.02em;}
+  #locPromptNone{background:var(--surface);border-radius:var(--r-lg);box-shadow:var(--shadow-rest);padding:40px;color:var(--ink);}
+  .kp-head{font-size:clamp(2rem,3.6vw,2.8rem);margin:0 0 10px;}
+  .kp-sub{color:var(--ink-soft);max-width:62ch;margin:0 0 24px;}
+  .kp-title{font-size:1.15rem;margin:28px 0 14px;}
+  #locPreview{padding-top:64px;}
+  @media (max-width:600px){#locPromptNone,.loc-preview{padding:24px 18px;}}
 </style>
 </head>
 <body>
@@ -938,12 +944,12 @@
 
   <section class="block soft" id="locPreview">
     <div class="wrap">
-      <div id="locPromptNone">Wähle oben deinen Standort, um Adresse und Kurszeiten direkt hier zu sehen.</div>
+      <div id="locPromptNone"><h2 class="kp-head">Kursplan &amp; Buchung</h2><p class="kp-sub">Alle Kurse in Maxvorstadt und Pasing. Freie Plätze siehst du live und buchst direkt hier. Wähl oben ein Studio, um nur dessen Kurse zu sehen.</p><div id="bsport-widget-home-both"></div><p class="widget-note">Kalender lädt nicht? Ruf uns an: <a href="tel:+498974039681">089 740 396 81</a></p></div>
       <div class="loc-preview loc-strict" data-loc="maxvorstadt">
         <div class="ornament"><span class="rule"></span>Dein Studio</div>
         <h2>Salsamás Maxvorstadt</h2>
         <p>Schnorrstr. 4, 80799 München — zentral, aber ruhig im Univiertel Schwabing-Maxvorstadt. U2 Theresienstraße oder U6 Universität, ca. 6 Gehminuten. Helles Erdgeschoss-Studio mit zweiseitiger Spiegelung.</p>
-        <div class="ornament" style="margin-top:28px;"><span class="rule"></span>Kursplan</div>
+        <h3 class="kp-title">Kursplan &amp; Buchung</h3>
         <div id="bsport-widget-locpreview-maxvorstadt"></div>
         <button class="btn btn-outline" style="margin-top:16px;" data-page="kurse">Alle Kursdetails &amp; Filter ansehen</button>
       </div>
@@ -951,7 +957,7 @@
         <div class="ornament"><span class="rule"></span>Dein Studio</div>
         <h2>Salsamás Pasing</h2>
         <p>München West, direkt neben den Pasing Arcaden. Geräumig und trotzdem gemütlich — erstklassige Tanzbedingungen für Einsteiger- bis Fortgeschrittenenkurse.</p>
-        <div class="ornament" style="margin-top:28px;"><span class="rule"></span>Kursplan</div>
+        <h3 class="kp-title">Kursplan &amp; Buchung</h3>
         <div id="bsport-widget-locpreview-pasing"></div>
         <button class="btn btn-outline" style="margin-top:16px;" data-page="kurse">Alle Kursdetails &amp; Filter ansehen</button>
       </div>
@@ -1643,6 +1649,7 @@
   mountKurseCalendar();
 </script>
 <script>
+  MountBsportWidget({"parentElement":"bsport-widget-home-both","companyId":5083,"franchiseId":null,"dialogMode":1,"widgetType":"calendar","compactMode":true,"showFab":false,"fullScreenPopup":false,"styles":undefined,"config":{"calendar":{"establishments":[17090,17055,17252],"establishmentGroups":[]}}})
   MountBsportWidget({
     "parentElement": "bsport-widget-locpreview-maxvorstadt",
     "companyId": 5083,
