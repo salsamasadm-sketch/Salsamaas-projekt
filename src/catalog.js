@@ -3,7 +3,7 @@
  * Salsamás-Getraenkekarte (Verkaufspreise laut Karte an der Theke)
  * mit Einkaufspreisen netto pro Stueck/Glas aus den METRO-Rechnungen vom 23.10. und 31.10.2026
  * (nach Mengenrabatt, ohne Pfand). Fehlende Einkaufspreise = null, bitte in der App ergaenzen.
- * plus METRO-App (Sprite Zero, Villa Antinori), Stand 05.11.2026.
+ * plus METRO-App (Sprite Zero, Villa Antinori, Ca' Ernesto Merlot), Stand 05.11.2026.
  * Annahmen pro Glas: Wein 0,2 l, Sekt 0,1 l, Cuba Libre 4 cl Rum + 0,2 l Cola + 1/4 Limette, Hugo = 1 Flasche City Hugo 0,2 l.
  */
 const CATALOG = [
@@ -19,7 +19,7 @@ const CATALOG = [
   { name: 'Helles', color: '#f2c230', priceCents: 450, category: 'bier', costCents: 71, source: 'Augustiner Lagerbier Hell 0,5 l' },
   { name: 'Sekt', color: '#e3cf8f', priceCents: 500, category: 'wein', costCents: 56, source: 'Rotkäppchen 0,75 l (4,19 €) ÷ 7,5 Gläser à 0,1 l' },
   { name: 'Weißwein', color: '#d6df8a', priceCents: 500, category: 'wein', costCents: 146, source: 'Villa Antinori Bianco Toscana 0,75 l, Angebot 5,49 € bis 31.12.2026 (sonst 8,49 € = 2,26 €/Glas) ÷ 3,75 Gläser à 0,2 l' },
-  { name: 'Rotwein', color: '#7b1e2b', priceCents: 500, category: 'wein', costCents: null },
+  { name: 'Rotwein', color: '#7b1e2b', priceCents: 500, category: 'wein', costCents: 101, source: "Ca' Ernesto Merlot 0,75 l, METRO-App 3,79 € ab 6 Flaschen (3,39 € ab 12 = 0,90 €/Glas) ÷ 3,75 Gläser à 0,2 l" },
   { name: 'Hugo', color: '#8cc63f', priceCents: 800, category: 'cocktails', costCents: 60, source: 'City Hugo 0,2 l Flasche' },
   { name: 'Aperol Spritz', color: '#f26b21', priceCents: 800, category: 'cocktails', costCents: 210, source: 'Aperol Spritz 0,2 l (3er-Pack 6,29 €)' },
   { name: 'Cuba Libre', color: '#4a2c1a', priceCents: 800, category: 'longdrinks', costCents: 110, source: 'Havana Club 3 Años 0,7 l (12,99 €) 4 cl = 0,74 € + Cola 1,25 l PET 0,2 l = 0,23 € + 1/4 Limette 0,13 €' },
