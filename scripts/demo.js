@@ -112,7 +112,7 @@ async function seedInto(store) {
       await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: ref, kind: 'bar', location, start: new Date(open.getTime() - 30 * 60_000).toISOString(), end: new Date(close.getTime() + 30 * 60_000).toISOString(), rateCents: rate, createdBy: ref });
     }
   }
-  // Aushilfen (nicht registriert), Stunden auf die Viertelstunde aufgerundet
+  // Aushilfen (nicht registriert), Stunden minutengenau
   const helperDays = [12, 5].map((d) => new Date(now - d * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }));
   await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: 'Carla', helper: true, kind: 'bar', location: 'maxvorstadt', start: new Date(`${helperDays[0]}T20:30:00+01:00`).toISOString(), end: new Date(`${helperDays[0]}T23:45:00+01:00`).toISOString(), rateCents: 1390, payout: 'bar', paid: true, createdBy: 'kasse' });
   await store.putDoc('shifts', { id: crypto.randomUUID(), staffRef: 'Jonas', helper: true, kind: 'empfang', location: 'pasing', start: new Date(`${helperDays[1]}T19:45:00+01:00`).toISOString(), end: new Date(`${helperDays[1]}T22:50:00+01:00`).toISOString(), rateCents: 1500, payout: 'ueberweisung', paid: false, createdBy: 'kasse' });

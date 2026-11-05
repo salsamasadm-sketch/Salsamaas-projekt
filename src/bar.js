@@ -1,16 +1,16 @@
 'use strict';
-/** Arbeitszeit wird immer auf die naechste Viertelstunde aufgerundet (z. B. 2:05 Std. -> 2,25 Std.). */
-const QUARTER_MS = 15 * 60_000;
-const billedHours = (start, end) => (Math.ceil(Math.max(0, new Date(end) - new Date(start)) / QUARTER_MS) * QUARTER_MS) / 3_600_000;
+/** Arbeitszeit minutengenau (ohne Aufrunden), z. B. 2:05 Std. = 2,083 Std. */
+const billedHours = (start, end) => Math.round(Math.max(0, new Date(end) - new Date(start)) / 60_000) / 60;
+const round2 = (x) => Math.round(x * 100) / 100;
 
 /**
- * Aushilfen (nicht registriert) beim Kassenabschluss: Stunden aufrunden, Lohn berechnen.
+ * Aushilfen (nicht registriert) beim Kassenabschluss: Stunden minutengenau, Lohn berechnen.
  * payout: 'bar' = aus dieser Kasse ausgezahlt (mindert das Kassensoll), 'ueberweisung' = wird ueberwiesen (Minijob).
  */
 function buildHelpers(session, input = [], newId) {
   return input.map((x) => {
     const hours = billedHours(x.start, x.end);
-    return { id: newId(), name: x.name, start: new Date(x.start).toISOString(), end: new Date(x.end).toISOString(), hours, rateCents: x.rateCents, payCents: Math.round(hours * x.rateCents), payout: x.payout };
+    return { id: newId(), name: x.name, start: new Date(x.start).toISOString(), end: new Date(x.end).toISOString(), hours: round2(hours), rateCents: x.rateCents, payCents: Math.round(hours * x.rateCents), payout: x.payout };
   });
 }
 /** Aus einer Aushilfe wird eine Schicht (damit sie in Personalkosten und Export auftaucht). */

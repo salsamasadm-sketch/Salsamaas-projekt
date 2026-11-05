@@ -348,7 +348,7 @@
     const helperRows = [];
     const helperBox = h('div', { class: 'helpers' });
     const helperSum = h('p', { class: 'small muted helper-sum' });
-    const quarterHours = (a, b) => Math.ceil(Math.max(0, b - a) / 900_000) / 4;
+    const exactHours = (a, b) => Math.round(Math.max(0, b - a) / 60_000) / 60;
     const helperTimes = (r) => {
       if (!r.from.value || !r.to.value) return null;
       const a = new Date(`${ses.date}T${r.from.value}`); let b = new Date(`${ses.date}T${r.to.value}`);
@@ -360,8 +360,8 @@
       for (const r of helperRows) {
         const t = helperTimes(r); const rate = toCents(r.rate.value);
         if (!t || rate == null) { r.out.textContent = '–'; continue; }
-        const hrs = quarterHours(t.a, t.b); const pay = Math.round(hrs * rate);
-        r.out.textContent = `${hrs.toLocaleString('de-DE')} Std. = ${eur(pay)}`;
+        const hrs = exactHours(t.a, t.b); const pay = Math.round(hrs * rate);
+        r.out.textContent = `${Math.floor(hrs)}:${String(Math.round((hrs % 1) * 60)).padStart(2, '0')} Std. = ${eur(pay)}`;
         if (r.payout.value === 'bar') cashTotal += pay; else transfer += pay;
       }
       helperSum.textContent = helperRows.length ? `Bar aus dieser Kasse: ${eur(cashTotal)} (wird vom Kassensoll abgezogen) · Überweisung: ${eur(transfer)}` : '';
@@ -400,7 +400,7 @@
     h('div', { class: 'grid2' }, field('Bargeld gezählt in €', cash), field('Entnahmen in € (Belege)', out), station !== 'tuer' && field('Gäste (ca.)', guests), field('Notiz', note)),
     station !== 'tuer' && h('details', {}, h('summary', {}, 'Während des Abends nachgefüllt? (aus dem Lager)'), restock.el),
     h('h2', {}, 'Aushilfen (nicht registriert)'),
-    h('div', { class: 'card inset' }, h('p', { class: 'small muted' }, 'Arbeitszeit wird automatisch auf die Viertelstunde aufgerundet. Bar ausgezahlter Lohn wird vom Kassensoll abgezogen, Überweisungen landen beim Chef als To-do.'), helperBox, helperSum,
+    h('div', { class: 'card inset' }, h('p', { class: 'small muted' }, 'Arbeitszeit wird minutengenau abgerechnet. Bar ausgezahlter Lohn wird vom Kassensoll abgezogen, Überweisungen landen beim Chef als To-do.'), helperBox, helperSum,
       h('button', { type: 'button', class: 'btn secondary', onclick: addHelper }, '+ Aushilfe hinzufügen')),
     station !== 'tuer' && h('h2', {}, 'Inventar – Endbestand (gezählt)'), station !== 'tuer' && end.el,
     h('div', { class: 'row' }, h('button', { class: 'btn', type: 'submit' }, 'Abschließen'), h('button', { class: 'btn secondary', type: 'button', onclick: () => route('kasse') }, 'Zurück zur Kasse')));
@@ -641,7 +641,7 @@
         h('button', { class: 'btn secondary', type: 'button', onclick: copyNext }, 'Woche in die nächste übernehmen')),
       h('div', { class: 'kpis plan-kpis' },
         kpiTile('Einsätze', String(w.totals.slots), `${w.totals.workshops} Workshop${w.totals.workshops === 1 ? '' : 's'}`, 'none'),
-        kpiTile('Stunden geplant', hrs(w.totals.hours), 'auf Viertelstunde gerundet', 'none'),
+        kpiTile('Stunden geplant', hrs(w.totals.hours), 'minutengenau', 'none'),
         kpiTile('Personalkosten geplant', eur(w.totals.costCents), 'inkl. Pauschalen', 'none'),
         kpiTile('Offen / Konflikte', `${w.totals.open} / ${w.conflicts.filter((c) => c.level !== 'info').length}`, w.conflicts.length ? 'siehe unten' : 'alles sauber', w.conflicts.some((c) => c.level === 'bad') ? 'bad' : w.totals.open ? 'warn' : 'ok')),
       w.conflicts.length > 0 && h('div', { class: 'card' }, h('ul', { class: 'list' }, w.conflicts.map((c) => h('li', { class: c.level }, h('span', { class: `sev ${c.level}` }, sev[c.level]), h('span', {}, c.text))))),

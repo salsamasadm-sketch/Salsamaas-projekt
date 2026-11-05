@@ -133,8 +133,8 @@ test('Stunden: stempeln, nachtragen, keine Ueberschneidung, Minijob-Kosten', asy
   assert.equal('rateCents' in me.recent[0], false); // Team sieht keine Loehne
   const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
   const lenaRow = d.personnel.byStaff.find((x) => x.ref === 'lena');
-  // 2 Std. nachgetragen + gestempelte Sekunden-Schicht (aufgerundet auf 15 Min.) = 2,25 Std. x 14 €
-  assert.equal(lenaRow.earnedCents, 3150);
+  // 2 Std. nachgetragen + gestempelte Sekunden-Schicht (minutengenau = 0 Min.) = 2 Std. x 14 €
+  assert.equal(lenaRow.earnedCents, 2800);
   // Deaktivieren sperrt sofort
   await s.call('PATCH', '/app/api/staff/lena', { token: chef, body: { active: false } });
   assert.equal((await s.call('GET', '/app/api/me', { token: lena })).status, 401);
@@ -191,7 +191,7 @@ test('Zeitraum, Vorperiode, Jahr und Kursgebuehr vor Ort', async () => {
   assert.equal(y.totals.nights, 3);
 });
 
-test('Aushilfen beim Kassenabschluss: Viertelstunde aufrunden, bar mindert Kassensoll, Ueberweisung als To-do', async () => {
+test('Aushilfen beim Kassenabschluss: minutengenau, bar mindert Kassensoll, Ueberweisung als To-do', async () => {
   const s = await start();
   const { chef, lena, cola } = await setup(s);
   await s.call('POST', '/app/api/shifts/start', { token: lena, body: { kind: 'bar', location: 'pasing' } });
@@ -199,15 +199,15 @@ test('Aushilfen beim Kassenabschluss: Viertelstunde aufrunden, bar mindert Kasse
   await s.call('POST', `/app/api/bar/${ses.id}/sales`, { token: lena, body: { payment: 'bar', items: [{ productId: cola.id, qty: 2 }] } });
   const t0 = new Date(Date.now() - 5 * 3_600_000);
   const at = (min) => new Date(t0.getTime() + min * 60_000).toISOString();
-  const r = (await s.call('POST', `/app/api/bar/${ses.id}/close`, { token: lena, body: { cashEndCents: 10700 - 3475, stockEnd: { [cola.id]: 3 }, helpers: [
-    { name: 'Carla', start: at(0), end: at(125), rateCents: 1390, payout: 'bar' },          // 2:05 -> 2,25 Std. x 13,90 € = 31,28 €
+  const r = (await s.call('POST', `/app/api/bar/${ses.id}/close`, { token: lena, body: { cashEndCents: 10700 - 2896, stockEnd: { [cola.id]: 3 }, helpers: [
+    { name: 'Carla', start: at(0), end: at(125), rateCents: 1390, payout: 'bar' },          // 2:05 = 2,083 Std. x 13,90 € = 28,96 €
     { name: 'Jonas', start: at(0), end: at(180), rateCents: 1500, payout: 'ueberweisung' }, // 3,00 Std. = 45,00 €
   ] } })).body;
-  assert.equal(r.helpers[0].hours, 2.25);
-  assert.equal(r.helpers[0].payCents, 3128);
+  assert.equal(r.helpers[0].hours, 2.08);
+  assert.equal(r.helpers[0].payCents, 2896);
   assert.equal(r.helpers[1].payCents, 4500);
-  assert.equal(r.helperCashCents, 3128);
-  assert.equal(r.cashExpectedCents, 10000 + 700 - 3128);
+  assert.equal(r.helperCashCents, 2896);
+  assert.equal(r.cashExpectedCents, 10000 + 700 - 2896);
   const d = (await s.call('GET', '/app/api/dashboard', { token: chef })).body;
   assert.ok(d.todos.some((t) => /Jonas: 45,00 € überweisen/.test(t.text)));
   assert.ok(!d.todos.some((t) => /Carla/.test(t.text)));

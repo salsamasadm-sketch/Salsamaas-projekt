@@ -140,7 +140,7 @@ function computeInvoices({ month, staff = [], shifts = [], invoices = [] }) {
     const hours = mine.reduce((a, x) => a + billedHours(x.start, x.end), 0);
     const amountCents = mine.reduce((a, x) => a + Math.round(billedHours(x.start, x.end) * (x.rateCents || 0)), 0);
     const inv = invoices.find((i) => i.id === `${p.id}_${month}`);
-    return { id: `${p.id}_${month}`, staffId: p.id, ref: p.ref, month, hours, amountCents, status: inv?.status || 'offen', updatedAt: inv?.updatedAt || null };
+    return { id: `${p.id}_${month}`, staffId: p.id, ref: p.ref, month, hours: Math.round(hours * 100) / 100, amountCents, status: inv?.status || 'offen', updatedAt: inv?.updatedAt || null };
   });
 }
 

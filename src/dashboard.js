@@ -31,7 +31,7 @@ function mergeSettings(s) {
 }
 
 /** Stunden einer Schicht; laufende Schichten zaehlen bis "jetzt". */
-/** Stunden einer Schicht; abgeschlossene werden auf die Viertelstunde aufgerundet, laufende zaehlen bis "jetzt". */
+/** Stunden einer Schicht, minutengenau; laufende zaehlen bis "jetzt". */
 function shiftHours(sh, now) {
   if (sh.end) return billedHours(sh.start, sh.end);
   return Math.max(0, (now - new Date(sh.start)) / 3_600_000);
@@ -192,14 +192,14 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
   }
   // Aushilfen, deren Lohn noch ueberwiesen werden muss (unabhaengig vom Zeitraum)
   for (const s of shifts.filter((x) => x.helper && x.payout === 'ueberweisung' && !x.paid)) {
-    todos.push({ level: 'warn', tab: 'personal', text: `Aushilfe ${s.staffRef}: ${eur(shiftCost(s, now))} überweisen (Minijob) – ${shiftHours(s, now).toLocaleString('de-DE')} Std. am ${berlinDate(s.start).split('-').reverse().join('.')}.` });
+    todos.push({ level: 'warn', tab: 'personal', text: `Aushilfe ${s.staffRef}: ${eur(shiftCost(s, now))} überweisen (Minijob) – ${shiftHours(s, now).toLocaleString('de-DE', { maximumFractionDigits: 2 })} Std. am ${berlinDate(s.start).split('-').reverse().join('.')}.` });
   }
   // Trainer auf Rechnung: Rechnung fuer den Vormonat noch nicht bezahlt
   {
     const [y, m] = berlinDate(now).slice(0, 7).split('-').map(Number);
     const prevMonth = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
     for (const inv of computeInvoices({ month: prevMonth, staff, shifts, invoices }).filter((i) => i.amountCents > 0 && i.status !== 'bezahlt')) {
-      todos.push({ level: 'warn', tab: 'personal', text: `Rechnung ${inv.ref} für ${prevMonth.split('-').reverse().join('/')}: ${eur(inv.amountCents)} (${inv.hours.toLocaleString('de-DE')} Std.) – ${inv.status === 'erhalten' ? 'erhalten, noch bezahlen' : 'noch nicht eingegangen'}.` });
+      todos.push({ level: 'warn', tab: 'personal', text: `Rechnung ${inv.ref} für ${prevMonth.split('-').reverse().join('/')}: ${eur(inv.amountCents)} (${inv.hours.toLocaleString('de-DE', { maximumFractionDigits: 2 })} Std.) – ${inv.status === 'erhalten' ? 'erhalten, noch bezahlen' : 'noch nicht eingegangen'}.` });
     }
   }
   if (fixedMonthly === 0) todos.push({ level: 'info', tab: 'ziele', text: 'Fixkosten (Miete usw.) hinterlegen, damit das Ergebnis stimmt.' });
@@ -290,7 +290,7 @@ function computeDashboard({ month, from, to, compare = true, invoices = [], purc
     insights,
     bar: { revenueCents: barRevenue, ticketRevenueCents: ticketRevenue, ticketMix: [...ticketMix.values()].sort((a, b) => b.qty - a.qty), guests, nights: nightsMap.size, cashDiffCents: cashDiff, missingUnits, missingValueCents: missingValue, daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)), byWeekday: wdRows, topProducts: [...top.values()].filter((x) => x.qty > 0).sort((a, b) => b.revenueCents - a.revenueCents), sessions: bars.sort((a, b) => b.date.localeCompare(a.date)) },
     shopping,
-    personnel: { totalCents: personnelCost, barCents: barPersonnelCost, byStaff, helpers: monthShifts.filter((s) => s.helper).map((s) => ({ id: s.id, name: s.staffRef, date: berlinDate(s.start), hours: shiftHours(s, now), payCents: shiftCost(s, now), payout: s.payout, paid: !!s.paid, location: s.location })) },
+    personnel: { totalCents: personnelCost, barCents: barPersonnelCost, byStaff, helpers: monthShifts.filter((s) => s.helper).map((s) => ({ id: s.id, name: s.staffRef, date: berlinDate(s.start), hours: Math.round(shiftHours(s, now) * 100) / 100, payCents: shiftCost(s, now), payout: s.payout, paid: !!s.paid, location: s.location })) },
     courses: { utilizationPct, participants, capacity: cap, openCount: openEnr.length, openOwedCents: openOwed, rows: courseRows },
     totals: { incomeCents: income, costsCents: costs, fixedCents: fixed, cogsCents: cogs, ticketMaterialCents: ticketMaterial, purchasesCents: purchaseSum, profitCents: profit },
   };
