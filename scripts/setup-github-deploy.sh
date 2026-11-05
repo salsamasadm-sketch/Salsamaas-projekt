@@ -42,5 +42,10 @@ for TARGET in "cockpit-run@${PROJECT}.iam.gserviceaccount.com" "${PN}-compute@de
   gcloud iam service-accounts add-iam-policy-binding "$TARGET" --member="serviceAccount:${SA}" --role=roles/iam.serviceAccountUser --format=none
 done
 
+# Quellcode-Ablage finden (gcloud run deploy --source listet die Buckets)
+gcloud iam roles describe runSourceUploader --project="$PROJECT" >/dev/null 2>&1 || \
+  gcloud iam roles create runSourceUploader --project="$PROJECT" --title="Run Source Upload (nur Ablage finden)" --permissions=storage.buckets.list,storage.buckets.get --stage=GA
+gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${SA}" --role="projects/${PROJECT}/roles/runSourceUploader" --condition=None --format=none
+
 echo "5/5 Fertig."
 echo "GitHub stellt die App ab jetzt bei jedem Push auf 'main' automatisch live (nach erfolgreichen Tests)."
