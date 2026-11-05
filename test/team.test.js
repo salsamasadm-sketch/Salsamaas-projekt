@@ -274,7 +274,7 @@ test('Getraenkekarte, Einkaufspreise, Wareneinsatz und Einkaeufe', async () => {
   const s = await start();
   const { chef } = await setup(s);
   const imp = (await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body;
-  assert.equal(imp.created, 33); // 14 Getränke + 13 Tickets/Check-ins + 7 Kursgebühren, 'Eintritt Übungsabend' gab es schon (keine Doppelung)
+  assert.equal(imp.created, 38); // 14 Getränke + 13 Tickets/Check-ins + 12 Kursgebühren, 'Eintritt Übungsabend' gab es schon (keine Doppelung)
   assert.equal((await s.call('POST', '/app/api/products/import-catalog', { token: chef })).body.created, 0); // keine Doppelungen
   const products = (await s.call('GET', '/app/api/products', { token: chef })).body;
   const helles = products.find((p) => p.name === 'Helles');

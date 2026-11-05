@@ -47,17 +47,23 @@ const TICKETS = [
 ];
 
 /**
- * Kursgebuehren vor Ort (Preise laut salsamas.de / salsamas-pasing.de, Stand 11/2026).
+ * Kursgebuehren vor Ort (Preise laut salsamas.de / salsamas-pasing.de und Pablo, Stand 11/2026).
+ * Mit Partner 10 € guenstiger pro Person; Probestunde 25 €, Privatstunde 100 € pro Person.
  * Preise gelten pro Person und Monat; 10er-Karte 3 Monate gueltig.
  */
 const COURSE_FEES = [
+  { name: 'Probestunde', priceCents: 2500, category: 'kursgebuehr', costCents: 0, source: 'pro Person' },
   { name: 'Kurs 4 × 75 Min.', priceCents: 8900, category: 'kursgebuehr', costCents: 0, source: 'Beginner/Mittelstufe, Einzelanmeldung' },
+  { name: 'Kurs 4 × 75 Min. mit Partner (p. P.)', priceCents: 7900, category: 'kursgebuehr', costCents: 0, source: '10 € günstiger pro Person – Paar = 2× tippen' },
   { name: 'Kurs 4 × 75 Min. Studierende', priceCents: 7900, category: 'kursgebuehr', costCents: 0 },
   { name: 'Kurs 4 × 60 Min.', priceCents: 7900, category: 'kursgebuehr', costCents: 0, source: 'z. B. Fortgeschrittene Pasing' },
+  { name: 'Kurs 4 × 60 Min. mit Partner (p. P.)', priceCents: 6900, category: 'kursgebuehr', costCents: 0, source: '10 € günstiger pro Person – Paar = 2× tippen' },
   { name: 'Kurs 4 × 60 Min. Studierende', priceCents: 6900, category: 'kursgebuehr', costCents: 0 },
   { name: 'Kurs 2 × 120 Min.', priceCents: 10000, category: 'kursgebuehr', costCents: 0, source: 'z. B. Mittelstufe 1 Pasing' },
+  { name: 'Kurs 2 × 120 Min. mit Partner (p. P.)', priceCents: 9000, category: 'kursgebuehr', costCents: 0, source: '10 € günstiger pro Person – Paar = 2× tippen' },
   { name: '10er-Karte', priceCents: 24900, category: 'kursgebuehr', costCents: 0, source: '3 Monate gültig' },
   { name: '10er-Karte Studierende', priceCents: 21900, category: 'kursgebuehr', costCents: 0, source: '3 Monate gültig' },
+  { name: 'Privatstunde', priceCents: 10000, category: 'kursgebuehr', costCents: 0, source: 'mit einem Lehrer, pro Person' },
 ];
 
 /** Farben fuer Eintritt/Workshops/Kursgebuehren und als Rueckfall nach Namen (Kassen-Buttons) */
