@@ -36,7 +36,7 @@ const TICKETS = [
   { name: 'Workshop-Teilnehmer bleibt (inkl.)', priceCents: 0, category: 'eintritt', costCents: 6, source: 'Workshop-Teilnehmer zum Übungsabend, inkl. 1 Eventband' },
   { name: 'Workshop Einzel', priceCents: 2000, category: 'workshop', costCents: 0 },
   { name: 'Workshop mit Partner (p. P.)', priceCents: 1500, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
-  { name: '2 Workshops Einzel', priceCents: 3500, category: 'workshop', costCents: 0 },
+  { name: '2 Workshops Einzel', priceCents: 3000, category: 'workshop', costCents: 0 },
   { name: '2 Workshops mit Partner (p. P.)', priceCents: 3000, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
   // Pass-Plattformen: Check-in gilt als Zahlung (0 € an der Tuer). Auszahlung pro Check-in geschaetzt.
   { name: 'Übungsabend nach Workshop-Check-in', priceCents: 500, category: 'eintritt', costCents: 6, source: 'Aufzahlung, wer per Pass zum Workshop eingecheckt hat' },
