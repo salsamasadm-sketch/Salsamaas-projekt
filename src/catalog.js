@@ -37,7 +37,7 @@ const TICKETS = [
   { name: 'Workshop Einzel', priceCents: 2000, category: 'workshop', costCents: 0 },
   { name: 'Workshop mit Partner (p. P.)', priceCents: 1500, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
   { name: '2 Workshops Einzel', priceCents: 3000, category: 'workshop', costCents: 0 },
-  { name: '2 Workshops mit Partner (p. P.)', priceCents: 3000, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
+  { name: '2 Workshops mit Partner (p. P.)', priceCents: 2500, category: 'workshop', costCents: 0, source: 'pro Person – Paar = 2× tippen' },
   // Pass-Plattformen: Check-in gilt als Zahlung (0 € an der Tuer). Auszahlung pro Check-in geschaetzt.
   { name: 'Übungsabend nach Workshop-Check-in', priceCents: 500, category: 'eintritt', costCents: 6, source: 'Aufzahlung, wer per Pass zum Workshop eingecheckt hat' },
   { name: 'Wellpass · Übungsabend', priceCents: 0, category: 'checkin', platform: 'Wellpass', checkinFor: 'abend', payoutCents: 1300, costCents: 6, color: '#0e9aa7', source: 'Check-in = bezahlt · ca. 13 € Auszahlung' },
