@@ -49,9 +49,26 @@
   .faq details { border-bottom: 1px solid var(--linie); padding: 12px 0; }
   .faq summary { cursor: pointer; font-weight: 700; color: var(--gold); }
   .faq p { margin: 8px 0 0; color: var(--grau); }
+  /* Menüleiste oben (bei Einbau ins Webseiten-System weglassen: dort gibt es schon das Hauptmenü) */
+  .menue { background: #000; border-bottom: 2px solid var(--bordeaux); position: sticky; top: 0; z-index: 10; }
+  .menue ul { list-style: none; margin: 0 auto; padding: 0 8px; max-width: 1040px; display: flex; flex-wrap: wrap; justify-content: center; }
+  .menue a { display: block; padding: 14px 14px; color: #fff; text-decoration: none; text-transform: uppercase;
+             font-size: .85rem; letter-spacing: .04em; }
+  .menue a:hover, .menue a[aria-current] { color: var(--gold-hell); }
+  .menue a[aria-current] { box-shadow: inset 0 -3px 0 var(--gold); }
 </style>
 </head>
 <body>
+<!-- Menüleiste: Links führen zur Hauptseite -->
+<nav class="menue" aria-label="Hauptmenü">
+  <ul>
+    <li><a href="https://salsamas-pasing.de/de/site/index">Startseite</a></li>
+    <li><a href="https://salsamas-pasing.de/de/site/page/3">Kurse &amp; Preise</a></li>
+    <li><a href="https://salsamas-pasing.de/de/site/page/2">Das Tanzstudio</a></li>
+    <li><a href="https://salsamas-pasing.de/de/site/page/7">Team</a></li>
+    <li><a href="#buchen" aria-current="page">Räume mieten</a></li>
+  </ul>
+</nav>
 <main>
 
   <h1>Tanzraum in Pasing mieten</h1>
