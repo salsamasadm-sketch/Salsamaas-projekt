@@ -1,0 +1,138 @@
+<!-- Zum Einfügen in die Seite "Räume mieten" im Verwaltungsbereich (Quelltext-/HTML-Ansicht). Ohne Menüleiste, das Hauptmenü ist schon da. -->
+<style>
+  /* Farben und Schriften wie salsamas-pasing.de (dunkel, Gold, Georgia-Überschriften) */
+  :root {
+    --bg: #0d0d0d;
+    --karte: #1a1a1a;
+    --text: #ffffff;
+    --grau: #bdbdbd;
+    --gold: #daa520;
+    --gold-hell: #fbbb00;
+    --gold-dunkel: #b77e02;
+    --bordeaux: #800000;
+    --linie: #333333;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, sans-serif; color: var(--text); background: var(--bg); line-height: 1.6; }
+  main { max-width: 1040px; margin: 0 auto; padding: 0 16px 56px; }
+  h1, h2, h3 { font-family: Georgia, Arial, sans-serif; text-transform: uppercase; font-style: italic; }
+  h1 { font-size: clamp(1.7rem, 5vw, 2.5rem); line-height: 1.15; margin: 40px 0 12px; color: var(--gold-hell); }
+  h2 { font-size: 1.5rem; margin: 48px 0 16px; color: var(--gold-dunkel); }
+  .lead { font-size: 1.05rem; color: var(--grau); max-width: 640px; margin: 0 0 24px; }
+  .btn { display: inline-block; background: var(--gold); color: #000; font-weight: 700; text-decoration: none;
+         padding: 12px 24px; border-radius: 4px; text-transform: uppercase; letter-spacing: .03em; }
+  .btn:hover { background: var(--gold-hell); color: #000; text-decoration: none; }
+  .raeume { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+  .raum { border: 1px solid var(--linie); border-top: 3px solid var(--bordeaux); border-radius: var(--radius);
+          overflow: hidden; background: var(--karte); }
+  .raum .inhalt { padding: 24px 20px; }
+  .raum h3 { margin: 0 0 4px; font-size: 1.2rem; color: var(--gold); }
+  .raum .preis { color: var(--gold-hell); font-weight: 700; margin: 0 0 12px; }
+  .raum ul { padding-left: 18px; margin: 0; color: var(--grau); }
+  .raum li { margin: 4px 0; }
+  .info { background: var(--karte); border-left: 3px solid var(--bordeaux); border-radius: var(--radius); padding: 20px 24px; color: var(--grau); }
+  .info ul { margin: 0; padding-left: 20px; }
+  /* Bsport-Widget bringt helles Design mit: auf weißer Fläche, damit es lesbar bleibt */
+  .widget { background: #fff; color: #1d1d1f; border-radius: var(--radius); padding: 16px; min-height: 200px; }
+  .faq details { border-bottom: 1px solid var(--linie); padding: 12px 0; }
+  .faq summary { cursor: pointer; font-weight: 700; color: var(--gold); }
+  .faq p { margin: 8px 0 0; color: var(--grau); }
+</style>
+<main>
+
+  <h1>Tanzraum in Pasing mieten</h1>
+  <p class="lead">Probe, Training, Workshop oder Fotoshooting: Miete unsere Räume bei Salsamás in München-Pasing stundenweise. Freie Zeiten siehst du unten und buchst direkt online.</p>
+  <a class="btn" href="#buchen">Jetzt buchen</a>
+
+  <h2>Unsere Räume</h2>
+  <div class="raeume">
+
+    <article class="raum">
+      <div class="inhalt">
+        <h3>Großer Raum</h3>
+        <p class="preis">ab XX € pro Stunde <!-- TODO --></p>
+        <ul>
+          <li>ca. XX m², Platz für ca. XX Personen <!-- TODO --></li>
+          <li>Tanzboden, Spiegel, Musikanlage <!-- TODO: prüfen --></li>
+          <li>Ideal für Kurse, Workshops, Gruppen-Proben</li>
+        </ul>
+      </div>
+    </article>
+
+    <article class="raum">
+      <div class="inhalt">
+        <h3>Kleiner Raum</h3>
+        <p class="preis">ab XX € pro Stunde <!-- TODO --></p>
+        <ul>
+          <li>ca. XX m², Platz für ca. XX Personen <!-- TODO --></li>
+          <li>Spiegel, Musikanlage <!-- TODO: prüfen --></li>
+          <li>Ideal für Privatstunden, Paar-Proben, Shootings</li>
+        </ul>
+      </div>
+    </article>
+
+  </div>
+
+  <h2 id="buchen">Online buchen</h2>
+  <p class="lead">Wähle Raum, Tag und Uhrzeit. Du bekommst die Bestätigung per E-Mail.</p>
+
+  <div class="widget">
+    <!-- Bsport-Widget: unverändert aus dem Backoffice übernommen -->
+    <script id="insert-bsport-widget-cdn">!function (b, s, p, o, r, t) { typeof window.BsportWidget === "undefined" && !document.getElementById("bsport-widget-cdn") && !function () { m = b.createElement(s), m.id = "bsport-widget-cdn", m.src = p, b.getElementsByTagName("head")[0].appendChild(m) }() }(document, "script", "https://cdn.bsport.io/scripts/widget.js")</script>
+    <script id="bsport-widget-mount">
+    function MountBsportWidget(config, repeat=1) {
+    if (repeat > 50) { return }
+    if (!window.BsportWidget) {
+    return setTimeout(() => {
+    MountBsportWidget(config,repeat+1)
+    }, 100 * repeat || 1)
+    }
+    BsportWidget.mount(config)
+    }
+    </script>
+    <script>
+    MountBsportWidget({
+    "parentElement": "bsport-widget-183451",
+    "companyId": 5083,
+    "franchiseId": null,
+    "dialogMode": 1,
+    "widgetType": "privateService",
+    "showFab": false,
+    "fullScreenPopup": false,
+    "styles":undefined,
+    "config": {
+    "privateService": { "type": "list",
+    "privateGroups": [
+    7880
+    ]}
+    }
+    })
+    </script>
+    <div id="bsport-widget-183451"></div>
+    <noscript>Bitte aktiviere JavaScript, um online zu buchen, oder schreib uns kurz per E-Mail.</noscript>
+  </div>
+
+  <h2>Gut zu wissen</h2>
+  <div class="info">
+    <!-- TODO: Bedingungen anpassen -->
+    <ul>
+      <li>Adresse: Salsamás Pasing, München (genaue Adresse eintragen)</li>
+      <li>Bezahlung: online bei der Buchung <!-- TODO prüfen --></li>
+      <li>Kostenlose Stornierung bis XX Stunden vorher <!-- TODO --></li>
+      <li>Bitte Tanzschuhe oder saubere Sohlen, keine Straßenschuhe auf dem Boden</li>
+      <li>Kein Kurs-Betrieb in dieser Zeit? Dann ist der Raum im Kalender frei buchbar.</li>
+    </ul>
+  </div>
+
+  <h2>Häufige Fragen</h2>
+  <div class="faq">
+    <details><summary>Kann ich den Raum für regelmäßige Termine mieten?</summary>
+      <p>Ja. Schreib uns kurz, welcher Wochentag und welche Zeit, dann machen wir dir ein Angebot. <!-- TODO --></p></details>
+    <details><summary>Darf ich eigene Musik und Technik mitbringen?</summary>
+      <p>Ja, eine Musikanlage ist vorhanden. Bring dein Handy oder deinen Laptop mit. <!-- TODO prüfen --></p></details>
+    <details><summary>Kann ich den Raum für Fotos oder Videos nutzen?</summary>
+      <p>Ja, bitte gib das bei der Buchung an. Gewerbliche Shootings bitte vorher anfragen. <!-- TODO --></p></details>
+  </div>
+
+</main>
