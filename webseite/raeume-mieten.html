@@ -8,7 +8,7 @@
 <!--
   Eigenständige Seite. Funktioniert so als eigene HTML-Datei oder als
   HTML-Block in WordPress/Wix (Inhalt von style und main kopieren).
-  Mit "TODO" markierte Stellen (Fotos, Größen, Preise, Bedingungen) bitte ersetzen.
+  Mit "TODO" markierte Stellen (Größen, Preise, Bedingungen) bitte ersetzen.
 -->
 <style>
   /* Farben und Schriften wie salsamas-pasing.de (dunkel, Gold, Georgia-Überschriften) */
@@ -37,9 +37,7 @@
   .raeume { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
   .raum { border: 1px solid var(--linie); border-top: 3px solid var(--bordeaux); border-radius: var(--radius);
           overflow: hidden; background: var(--karte); }
-  .raum .foto { aspect-ratio: 16 / 10; background: #000 center / cover no-repeat;
-                display: flex; align-items: center; justify-content: center; color: #777; font-size: .9rem; }
-  .raum .inhalt { padding: 20px; }
+  .raum .inhalt { padding: 24px 20px; }
   .raum h3 { margin: 0 0 4px; font-size: 1.2rem; color: var(--gold); }
   .raum .preis { color: var(--gold-hell); font-weight: 700; margin: 0 0 12px; }
   .raum ul { padding-left: 18px; margin: 0; color: var(--grau); }
@@ -64,8 +62,6 @@
   <div class="raeume">
 
     <article class="raum">
-      <!-- TODO: Foto eintragen, z. B. style="background-image:url('/bilder/grosser-raum.jpg')" -->
-      <div class="foto" role="img" aria-label="Großer Raum">Foto großer Raum</div>
       <div class="inhalt">
         <h3>Großer Raum</h3>
         <p class="preis">ab XX € pro Stunde <!-- TODO --></p>
@@ -78,8 +74,6 @@
     </article>
 
     <article class="raum">
-      <!-- TODO: Foto eintragen -->
-      <div class="foto" role="img" aria-label="Kleiner Raum">Foto kleiner Raum</div>
       <div class="inhalt">
         <h3>Kleiner Raum</h3>
         <p class="preis">ab XX € pro Stunde <!-- TODO --></p>
