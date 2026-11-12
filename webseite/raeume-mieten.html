@@ -11,16 +11,16 @@
   Mit "TODO" markierte Stellen (Größen, Preise, Bedingungen) bitte ersetzen.
 -->
 <style>
-  /* Farben und Schriften wie salsamas-pasing.de (dunkel, Gold, Georgia-Überschriften) */
+  /* Farben wie salsamas-pasing.de: dunkler Hintergrund, Magenta, Koralle-Akzent, Georgia-Überschriften */
   :root {
     --bg: #0d0d0d;
     --karte: #1a1a1a;
     --text: #ffffff;
     --grau: #bdbdbd;
-    --gold: #daa520;
-    --gold-hell: #fbbb00;
-    --gold-dunkel: #b77e02;
-    --bordeaux: #800000;
+    --gold: #f86040;
+    --gold-hell: #f86040;
+    --gold-dunkel: #e05040;
+    --bordeaux: #7a0047;
     --linie: #333333;
     --radius: 12px;
   }
@@ -50,7 +50,7 @@
   .faq summary { cursor: pointer; font-weight: 700; color: var(--gold); }
   .faq p { margin: 8px 0 0; color: var(--grau); }
   /* Menüleiste oben (bei Einbau ins Webseiten-System weglassen: dort gibt es schon das Hauptmenü) */
-  .menue { background: #000; border-bottom: 2px solid var(--bordeaux); position: sticky; top: 0; z-index: 10; }
+  .menue { background: var(--bordeaux); border-bottom: 2px solid var(--gold); position: sticky; top: 0; z-index: 10; }
   .menue ul { list-style: none; margin: 0 auto; padding: 0 8px; max-width: 1040px; display: flex; flex-wrap: wrap; justify-content: center; }
   .menue a { display: block; padding: 14px 14px; color: #fff; text-decoration: none; text-transform: uppercase;
              font-size: .85rem; letter-spacing: .04em; }
